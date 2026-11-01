@@ -10,11 +10,11 @@ const MAP_WIDTH = 4096
 const MAP_HEIGHT = 1365
 const DRAG_THRESHOLD = 5
 
-// Kotak kelima provinsi di ruang peta 4096x1365
-const ALL_PROVINCES_FIT = { x: 1674, y: 430, width: 494, height: 551 }
+// Kotak gabungan semua provinsi (Sumatera + Kalimantan) di ruang peta 4096x1365
+const ALL_PROVINCES_FIT = { x: 1117, y: 431, width: 1203, height: 602 }
 
-// Titik api minggu aktif, diisi dari halaman provinsi
-import { kalbarFirePoints } from '@/data/kalbar-fire-points'
+// Titik api minggu aktif per provinsi (koordinat peta), diisi dari halaman provinsi
+import { provinceFirePoints } from '@/data/fire-points'
 import { DEFAULT_WEEK_INDEX } from '@/data/kalbar-weekly-metrics'
 
 interface SharedMapProps {
@@ -40,6 +40,9 @@ const PROVINCE_FRAME: Record<string, { x: number; y: number; width: number; heig
   'kalimantan-selatan': { x: 2020, y: 793, width: 146, height: 186 },
   'kalimantan-timur': { x: 1995, y: 550, width: 325, height: 321 },
   'kalimantan-utara': { x: 2037, y: 430, width: 224, height: 218 },
+  riau: { x: 1117, y: 546, width: 238, height: 239 },
+  jambi: { x: 1184, y: 760, width: 217, height: 132 },
+  'sumatera-selatan': { x: 1244, y: 817, width: 256, height: 215 },
 }
 
 const MIN_ZOOM = 1
@@ -77,9 +80,10 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
   // Posisi dan skala peta dalam piksel layar. Transisi route memakai animate(),
   // sedangkan drag menulis langsung tanpa spring supaya berhenti tepat saat dilepas.
-  const posX = useMotionValue(-1328)
-  const posY = useMotionValue(-61)
-  const scaleMV = useMotionValue(1)
+  // Nilai awal = framing landing di 1440x1024 supaya first paint langsung benar.
+  const posX = useMotionValue(-1172.5)
+  const posY = useMotionValue(-294.1)
+  const scaleMV = useMotionValue(1.101)
 
   const [isPointerDown, setIsPointerDown] = useState(false)
   const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
@@ -123,23 +127,15 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
       const padding = isMobile ? 12 : 0
       const areaW = viewport.width - padding * 2
       const areaH = viewport.height - padding * 2 - top - bottom
-      if (isMobile) {
-        const s = Math.min(areaW / ALL_PROVINCES_FIT.width, areaH / ALL_PROVINCES_FIT.height)
-        return {
-          scale: s,
-          cx: ALL_PROVINCES_FIT.x + ALL_PROVINCES_FIT.width / 2,
-          cy: ALL_PROVINCES_FIT.y + ALL_PROVINCES_FIT.height / 2,
-          ox: padding + areaW / 2,
-          oy: padding + top + areaH / 2,
-        }
-      }
-      const cover = Math.max(viewport.width / 1440, viewport.height / 1024)
+      // Landing memuat semua provinsi prioritas (Sumatera + Kalimantan) dengan margin
+      const margin = isMobile ? 1 : 0.92
+      const s = Math.min(areaW / ALL_PROVINCES_FIT.width, areaH / ALL_PROVINCES_FIT.height) * margin
       return {
-        scale: cover,
-        cx: 1328 + 720,
-        cy: 61 + 512,
-        ox: viewport.width / 2,
-        oy: viewport.height / 2,
+        scale: s,
+        cx: ALL_PROVINCES_FIT.x + ALL_PROVINCES_FIT.width / 2,
+        cy: ALL_PROVINCES_FIT.y + ALL_PROVINCES_FIT.height / 2,
+        ox: padding + areaW / 2,
+        oy: padding + top + areaH / 2,
       }
     }
     const frame =
@@ -246,9 +242,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
   const showMarkers = camera.kind === 'landing'
 
-  // Titik api hanya di halaman Kalimantan Barat
+  // Titik api tampil di halaman provinsi yang punya data (mode Titik Api)
   const showFire =
-    camera.kind === 'province' && camera.slug === 'kalimantan-barat' && mode === 'fire'
+    camera.kind === 'province' && mode === 'fire' && camera.slug in provinceFirePoints
 
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val))
 
@@ -410,7 +406,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewport.width, viewport.height, baseFrame.scale])
 
-  const firePoints = kalbarFirePoints[weekIndex] ?? kalbarFirePoints[DEFAULT_WEEK_INDEX]
+  const slugWeeks = camera.kind === 'province' ? provinceFirePoints[camera.slug] : undefined
+  const firePoints = slugWeeks?.[weekIndex] ?? slugWeeks?.[DEFAULT_WEEK_INDEX] ?? []
 
   return (
     <div

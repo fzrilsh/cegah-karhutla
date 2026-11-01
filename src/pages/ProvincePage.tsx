@@ -13,7 +13,7 @@ import { ScaleToFit } from '@/components/ScaleToFit'
 import { useMobile } from '@/hooks/use-mobile'
 import { useUiScale } from '@/hooks/use-ui-scale'
 import { Scaled } from '@/components/Scaled'
-import { kalbarWeeklyMetrics, DEFAULT_WEEK_INDEX } from '@/data/kalbar-weekly-metrics'
+import { provinceWeeklyMetrics, DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
 import gasMaskIcon from '@/assets/icons/gas-mask.svg'
 
 interface ProvincePageProps {
@@ -35,8 +35,10 @@ export function ProvincePage({ slug }: ProvincePageProps) {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  const currentMetric =
-    kalbarWeeklyMetrics[weekIndex] ?? kalbarWeeklyMetrics[DEFAULT_WEEK_INDEX]
+  const weeklyMetrics =
+    (slug ? provinceWeeklyMetrics[slug] : undefined) ??
+    provinceWeeklyMetrics['kalimantan-barat']
+  const currentMetric = weeklyMetrics[weekIndex] ?? weeklyMetrics[DEFAULT_WEEK_INDEX]
 
   const provinceName = province ? province.name : 'Provinsi'
 
@@ -134,7 +136,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
             </div>
 
             <TimelineSlider
-              metrics={kalbarWeeklyMetrics}
+              metrics={weeklyMetrics}
               activeIndex={weekIndex}
               onChange={setWeekIndex}
               compact
@@ -217,7 +219,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
         className="pointer-events-auto absolute z-20"
       >
         <TimelineSlider
-          metrics={kalbarWeeklyMetrics}
+          metrics={weeklyMetrics}
           activeIndex={weekIndex}
           onChange={setWeekIndex}
         />
