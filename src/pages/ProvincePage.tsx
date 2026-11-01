@@ -28,6 +28,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
   const [mode, setMode] = useState<MapLayerMode>('fire')
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [sheetHeight, setSheetHeight] = useState(172)
 
   const showToast = (message: string) => {
     setToastMessage(message)
@@ -53,7 +54,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
                 key={value}
                 type="button"
                 onClick={() => setMode(value)}
-                className={`flex-1 h-[36px] cursor-pointer rounded-[8px] font-display text-[14px] transition-colors ${
+                className={`h-[36px] min-w-0 flex-1 cursor-pointer truncate whitespace-nowrap rounded-[8px] px-2 font-display text-[14px] transition-colors ${
                   mode === value ? 'bg-paper text-ink' : 'text-paper-2'
                 }`}
               >
@@ -63,8 +64,16 @@ export function ProvincePage({ slug }: ProvincePageProps) {
           </div>
         </div>
 
-        {/* Ringkasan melayang di atas lembar bawah */}
-        <div className="pointer-events-none absolute inset-x-3 bottom-[calc(180px+env(safe-area-inset-bottom))] z-30">
+        {/* Ringkasan melayang, menempel di atas lembar bawah dan hilang saat lembar terbuka */}
+        <div
+          style={{
+            bottom: `calc(${sheetHeight}px + 8px + env(safe-area-inset-bottom))`,
+            opacity: sheetHeight > 200 ? 0 : 1,
+            transition: 'opacity 0.2s ease-out',
+            visibility: sheetHeight > 200 ? 'hidden' : 'visible',
+          }}
+          className="pointer-events-none absolute inset-x-3 z-30"
+        >
           <div className="flex items-center gap-3 rounded-[12px] border border-navy-700 bg-paper/95 px-4 py-3 shadow-glow">
             <div
               className={`flex size-[44px] shrink-0 items-center justify-center rounded-[10px] ${
@@ -77,7 +86,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
               <p className="truncate font-display text-[16px] leading-tight text-ink">
                 {provinceName}
               </p>
-              <p className="font-sans text-[12px] font-semibold text-ink/80">
+              <p className="truncate font-sans text-[12px] font-semibold text-ink/80">
                 {currentMetric.dateShort} · AQI {currentMetric.aqi} · {currentMetric.visibility}
               </p>
             </div>
@@ -85,8 +94,12 @@ export function ProvincePage({ slug }: ProvincePageProps) {
         </div>
 
         {/* Lembar bawah: kartu lengkap dan slider */}
-        <BottomSheet collapsedHeight={172} className="pointer-events-auto">
-          <div className="flex flex-col gap-4 overflow-y-auto pb-2" style={{ maxHeight: '100%' }}>
+        <BottomSheet
+          collapsedHeight={172}
+          className="pointer-events-auto"
+          onHeightChange={setSheetHeight}
+        >
+          <div className="flex flex-col gap-3 overflow-y-auto pb-2" style={{ maxHeight: '100%' }}>
             <ScaleToFit designWidth={434} designHeight={288}>
               <InfoCard
                 provinceName={provinceName}
@@ -105,7 +118,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
                 onClick={() =>
                   showToast('Mencari posko kesehatan oksigen terdekat di ' + provinceName + '.')
                 }
-                className="flex h-[48px] flex-1 cursor-pointer items-center justify-center rounded-[12px] border border-navy-700 bg-paper font-display text-[14px] text-ink shadow-glow transition-transform active:scale-[0.98]"
+                className="flex h-[48px] min-w-0 flex-1 cursor-pointer items-center justify-center truncate whitespace-nowrap rounded-[12px] border border-navy-700 bg-paper px-2 font-display text-[14px] text-ink shadow-glow transition-transform active:scale-[0.98]"
               >
                 Posko Kesehatan
               </button>
@@ -114,19 +127,18 @@ export function ProvincePage({ slug }: ProvincePageProps) {
                 onClick={() =>
                   showToast('Formulir pelaporan titik api karhutla ' + provinceName + ' dibuka.')
                 }
-                className="flex h-[48px] flex-1 cursor-pointer items-center justify-center rounded-[12px] border border-navy-700 bg-paper font-display text-[14px] text-ink shadow-glow transition-transform active:scale-[0.98]"
+                className="flex h-[48px] min-w-0 flex-1 cursor-pointer items-center justify-center truncate whitespace-nowrap rounded-[12px] border border-navy-700 bg-paper px-2 font-display text-[14px] text-ink shadow-glow transition-transform active:scale-[0.98]"
               >
                 Lapor Titik Api
               </button>
             </div>
 
-            <ScaleToFit designWidth={1340} designHeight={140}>
-              <TimelineSlider
-                metrics={kalbarWeeklyMetrics}
-                activeIndex={weekIndex}
-                onChange={setWeekIndex}
-              />
-            </ScaleToFit>
+            <TimelineSlider
+              metrics={kalbarWeeklyMetrics}
+              activeIndex={weekIndex}
+              onChange={setWeekIndex}
+              compact
+            />
           </div>
         </BottomSheet>
 

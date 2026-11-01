@@ -5,6 +5,7 @@ interface BottomSheetProps {
   readonly maxRatio?: number
   readonly className?: string
   readonly children: ReactNode
+  readonly onHeightChange?: (height: number) => void
 }
 
 // Lembar bawah dengan handle yang bisa ditarik untuk membuka dan menutup konten
@@ -13,6 +14,7 @@ export function BottomSheet({
   maxRatio = 0.85,
   className,
   children,
+  onHeightChange,
 }: BottomSheetProps) {
   const [expanded, setExpanded] = useState(false)
   const [dragHeight, setDragHeight] = useState<number | null>(null)
@@ -36,6 +38,10 @@ export function BottomSheet({
 
   const maxHeight = viewportHeight * maxRatio
   const sheetHeight = dragHeight ?? (expanded ? maxHeight : collapsedHeight)
+
+  useEffect(() => {
+    onHeightChange?.(sheetHeight)
+  }, [sheetHeight, onHeightChange])
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current = { startY: e.clientY, startHeight: sheetHeight, maxHeight, moved: false }

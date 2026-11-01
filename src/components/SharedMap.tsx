@@ -29,7 +29,8 @@ function getLandingFitInsets(isMobile: boolean) {
 }
 
 function getProvinceFitInsets(isMobile: boolean) {
-  return isMobile ? { top: 128, bottom: 210 } : { top: 0, bottom: 0 }
+  // bottom: tinggi sheet tertutup (172) + ringkasan melayang (sekitar 68) + jarak
+  return isMobile ? { top: 128, bottom: 260 } : { top: 0, bottom: 0 }
 }
 
 // Framing per provinsi dari bounding box (Figma hanya memuat framing Kalbar di 102:565)
