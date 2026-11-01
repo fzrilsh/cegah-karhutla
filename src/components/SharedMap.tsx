@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { m, useMotionValue, useSpring } from 'motion/react'
+import { m, animate, useMotionValue } from 'motion/react'
 import { provinceMapItems } from '@/data/provinces-map-data'
 import { ProvinceMarker } from '@/components/ProvinceMarker'
 import { FireLayer } from '@/components/FireLayer'
@@ -52,13 +52,11 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
   const lastHoveredRef = useRef<string | null>(null)
 
-  // Posisi dan skala peta dalam piksel layar
+  // Posisi dan skala peta dalam piksel layar. Transisi route memakai animate(),
+  // sedangkan drag menulis langsung tanpa spring supaya berhenti tepat saat dilepas.
   const posX = useMotionValue(-1328)
   const posY = useMotionValue(-61)
   const scaleMV = useMotionValue(1)
-  const posXSpring = useSpring(posX, { stiffness: 55, damping: 18, mass: 1 })
-  const posYSpring = useSpring(posY, { stiffness: 55, damping: 18, mass: 1 })
-  const scaleSpring = useSpring(scaleMV, { stiffness: 55, damping: 18, mass: 1 })
 
   const [isPointerDown, setIsPointerDown] = useState(false)
   const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
@@ -82,8 +80,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   const applyZoom = (factor: number, centerX?: number, centerY?: number) => {
     const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomRef.current * factor))
     if (next === zoomRef.current) return
-    const cx = centerX ?? viewport.width / 2
-    const cy = centerY ?? viewport.height / 2
+    const cx = centerX ?? baseFrame.ox
+    const cy = centerY ?? baseFrame.oy
     const oldScale = baseFrame.scale * zoomRef.current
     const newScale = baseFrame.scale * next
     // Pertahankan titik peta di bawah kursor saat zoom
@@ -108,39 +106,96 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           scale: s,
           cx: ALL_PROVINCES_FIT.x + ALL_PROVINCES_FIT.width / 2,
           cy: ALL_PROVINCES_FIT.y + ALL_PROVINCES_FIT.height / 2,
+          ox: padding + areaW / 2,
+          oy: padding + top + areaH / 2,
         }
       }
       const cover = Math.max(viewport.width / 1440, viewport.height / 1024)
-      return { scale: cover, cx: 1328 + 720, cy: 61 + 512 }
+      return {
+        scale: cover,
+        cx: 1328 + 720,
+        cy: 61 + 512,
+        ox: viewport.width / 2,
+        oy: viewport.height / 2,
+      }
     }
     const frame =
       (camera.kind === 'province' && PROVINCE_FRAME[camera.slug]) || PROVINCE_FRAME['kalimantan-barat']
-    const { top, bottom } = getProvinceFitInsets(isMobile)
-    const padding = isMobile ? 12 : 0
-    const areaW = viewport.width - padding * 2
-    const areaH = viewport.height - padding * 2 - top - bottom
-    const s = Math.min(areaW / frame.width, areaH / frame.height)
-    return { scale: s, cx: frame.x + frame.width / 2, cy: frame.y + frame.height / 2 }
+    // Area bebas overlay: bar atas, kartu kanan, dan slider bawah (desktop);
+    // bar atas + toggle dan bottom sheet (mobile)
+    let freeX: number
+    let freeY: number
+    let freeW: number
+    let freeH: number
+    if (isMobile) {
+      const padding = 12
+      const { top, bottom } = getProvinceFitInsets(isMobile)
+      freeX = padding
+      freeY = padding + top
+      freeW = viewport.width - padding * 2
+      freeH = viewport.height - padding * 2 - top - bottom
+    } else {
+      const ui = Math.min(1.5, Math.max(0.6, viewport.width / 1440))
+      const marginX = Math.max(16, 0.0347 * viewport.width)
+      const marginTop = Math.max(12, 0.0488 * viewport.height)
+      const left = marginX + 60 * ui + 24
+      const right = marginX + 434 * ui + 24
+      const top = marginTop + 60 * ui + 16
+      const bottom = 140 + marginTop + 16
+      freeX = left
+      freeY = top
+      freeW = viewport.width - left - right
+      freeH = viewport.height - top - bottom
+    }
+    // Skala zoom memperhitungkan luas provinsi: sFit mengisi area bebas, sCap membatasi
+    // provinsi kecil agar tidak terlalu ngezoom, FIT_MARGIN memberi ruang napas.
+    const FIT_MARGIN = 0.85
+    const diagRef = 380 // diagonal Kalbar (referensi framing Figma 102:565)
+    const sFit = Math.min(freeW / frame.width, freeH / frame.height)
+    const diag = Math.hypot(frame.width, frame.height)
+    const sCap = (freeW / diagRef) * Math.min(1, diag / diagRef)
+    const s = Math.min(sFit, sCap) * FIT_MARGIN
+    return {
+      scale: s,
+      cx: frame.x + frame.width / 2,
+      cy: frame.y + frame.height / 2,
+      ox: freeX + freeW / 2,
+      oy: freeY + freeH / 2,
+    }
   })()
 
-  // Transform kamera target = framing dasar dikali zoom, dipusatkan ke kotak peta
+  // Transform kamera target = framing dasar dikali zoom, dipusatkan ke tengah area bebas
   const targetTransform = (() => {
     const scale = baseFrame.scale * zoomRef.current
     return {
       scale,
-      x: viewport.width / 2 - baseFrame.cx * scale,
-      y: viewport.height / 2 - baseFrame.cy * scale,
+      x: baseFrame.ox - baseFrame.cx * scale,
+      y: baseFrame.oy - baseFrame.cy * scale,
     }
   })()
 
-  // Terapkan kamera target saat route, ukuran viewport, atau zoom berubah.
+  // Transisi kamera smooth saat route atau ukuran viewport berubah. Ketiga properti
+  // (x, y, scale) dianimasikan dari satu progres 0 sampai 1 dan diinterpolasi bersama
+  // supaya selalu konsisten (x = ox - cx*scale) dan tidak ada getaran di akhir akibat
+  // spring independen yang selesai pada waktu berbeda.
   const camKey = camera.kind === 'province' ? `province:${camera.slug}` : 'landing'
   useEffect(() => {
     userHasPannedRef.current = false
     zoomRef.current = 1
-    posX.set(targetTransform.x)
-    posY.set(targetTransform.y)
-    scaleMV.set(targetTransform.scale)
+    const from = { x: posX.get(), y: posY.get(), s: scaleMV.get() }
+    const to = { x: targetTransform.x, y: targetTransform.y, s: targetTransform.scale }
+    const controls = animate(0, 1, {
+      duration: 0.75,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (t) => {
+        posX.set(from.x + (to.x - from.x) * t)
+        posY.set(from.y + (to.y - from.y) * t)
+        scaleMV.set(from.s + (to.s - from.s) * t)
+      },
+    })
+    return () => {
+      controls.stop()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camKey, viewport.width, viewport.height, isMobile])
 
@@ -155,22 +210,52 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val))
 
+  // Collision akurat: konversi titik kursor ke koordinat peta, lalu uji isPointInFill
+  // pada tiap path sehingga hanya bentuk yang benar-benar berisi titik yang menyala
+  // (bukan sekadar tumpang tindih kotak bounding SVG).
+  const svgPointRef = useRef<DOMPoint | null>(null)
   const resolveHoveredSlug = (clientX: number, clientY: number) => {
     const container = containerRef.current
     if (!container) return lastHoveredRef.current
-    const stack = document.elementsFromPoint(clientX, clientY)
-    for (const el of stack) {
-      if (!(el instanceof Element)) continue
-      if (el instanceof SVGElement && el.dataset.province) return el.dataset.province
-      if (el === container) return null
-      if (!container.contains(el)) return lastHoveredRef.current
-      if (el instanceof HTMLElement) return lastHoveredRef.current
+    const rect = container.getBoundingClientRect()
+    // Kalau kursor di atas UI overlay (bukan dasar peta), pertahankan hover lama
+    const top = document.elementFromPoint(clientX, clientY)
+    if (top && top instanceof HTMLElement && container.contains(top) && top !== container) {
+      return lastHoveredRef.current
     }
-    return lastHoveredRef.current
+    if (!svgPointRef.current) {
+      const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svgPointRef.current = tmp.createSVGPoint()
+    }
+    const pt = svgPointRef.current
+    const s = scaleMV.get()
+    const mapX = (clientX - rect.left - posX.get()) / s
+    const mapY = (clientY - rect.top - posY.get()) / s
+    const paths = container.querySelectorAll<SVGPathElement>('path[data-province]')
+    for (const path of paths) {
+      const svg = path.ownerSVGElement
+      if (!svg) continue
+      // viewBox svg identik dengan ukuran penempatannya di ruang peta (skala 1:1),
+      // jadi koordinat viewBox = koordinat peta dikurangi offset left/top svg
+      pt.x = mapX - parseFloat(svg.style.left || '0')
+      pt.y = mapY - parseFloat(svg.style.top || '0')
+      if (pt.x >= 0 && pt.y >= 0 && path.isPointInFill(pt)) {
+        return path.dataset.province ?? null
+      }
+    }
+    return null
   }
+
+  // Pan hanya di landing; di halaman detail peta terkunci pada framing provinsi
+  const canPan = camera.kind === 'landing'
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return
+    if (!canPan) return
+    // Hentikan animasi transisi route yang masih berjalan supaya drag tidak ditimpa
+    posX.stop()
+    posY.stop()
+    scaleMV.stop()
     setIsPointerDown(true)
     hasMovedRef.current = false
     dragStartRef.current = {
@@ -184,6 +269,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
   const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== 'mouse') return
+    // Hover provinsi hanya aktif di landing; di halaman detail fokus tetap di provinsi aktif
+    if (camera.kind !== 'landing') return
     const slug = resolveHoveredSlug(e.clientX, e.clientY)
     if (slug !== lastHoveredRef.current) {
       lastHoveredRef.current = slug
@@ -218,14 +305,20 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     const onUp = () => {
       dragStartRef.current = null
       setIsPointerDown(false)
+      // Drag menulis langsung ke motion value tanpa spring, jadi peta berhenti tepat
+      // saat dilepas. hasMovedRef tidak di-reset di sini supaya click tepat setelah
+      // drag tidak ikut memicu select; di-reset pada pointerdown berikutnya.
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
+    // Lepas drag juga saat window kehilangan fokus (misal Alt+Tab di tengah drag)
+    window.addEventListener('blur', onUp)
     return () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('blur', onUp)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPointerDown, viewport.width, viewport.height])
@@ -286,7 +379,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
       onPointerCancel={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       className={`absolute inset-0 size-full overflow-hidden select-none ${
-        isPointerDown ? 'cursor-grabbing' : 'cursor-grab'
+        canPan ? (isPointerDown ? 'cursor-grabbing' : 'cursor-grab') : ''
       }`}
       style={{ touchAction: 'none' }}
     >
@@ -294,9 +387,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         style={{
           width: MAP_WIDTH,
           height: MAP_HEIGHT,
-          x: posXSpring,
-          y: posYSpring,
-          scale: scaleSpring,
+          x: posX,
+          y: posY,
+          scale: scaleMV,
           transformOrigin: 'top left',
         }}
         className="relative"
