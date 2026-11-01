@@ -44,6 +44,28 @@ const PROVINCE_FRAME: Record<string, { x: number; y: number; width: number; heig
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
 
+// Posisi peta landing disimpan di localStorage supaya kembali ke tempat semula
+// setelah keluar dari halaman detail
+const LANDING_CAM_KEY = 'ck-landing-camera'
+
+interface SavedCamera {
+  readonly x: number
+  readonly y: number
+  readonly scale: number
+}
+
+function readLandingCamera(): SavedCamera | null {
+  try {
+    const raw = localStorage.getItem(LANDING_CAM_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SavedCamera>
+    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number' || typeof parsed.scale !== 'number') return null
+    return { x: parsed.x, y: parsed.y, scale: parsed.scale }
+  } catch {
+    return null
+  }
+}
+
 // Peta bersama yang tidak ikut unmount saat pindah route supaya kamera bergerak smooth
 export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekIndex = DEFAULT_WEEK_INDEX }: SharedMapProps) {
   const { camera, enterProvince } = useMapTransition()
@@ -179,11 +201,30 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   // supaya selalu konsisten (x = ox - cx*scale) dan tidak ada getaran di akhir akibat
   // spring independen yang selesai pada waktu berbeda.
   const camKey = camera.kind === 'province' ? `province:${camera.slug}` : 'landing'
+  const prevCamKeyRef = useRef(camKey)
   useEffect(() => {
+    const prevCamKey = prevCamKeyRef.current
+    prevCamKeyRef.current = camKey
     userHasPannedRef.current = false
-    zoomRef.current = 1
+
+    // Simpan kamera landing tepat sebelum masuk halaman detail
+    if (prevCamKey === 'landing' && camera.kind === 'province') {
+      try {
+        const saved: SavedCamera = { x: posX.get(), y: posY.get(), scale: scaleMV.get() }
+        localStorage.setItem(LANDING_CAM_KEY, JSON.stringify(saved))
+      } catch {
+        // abaikan kegagalan storage
+      }
+    }
+
+    // Saat kembali ke landing, pulihkan kamera tersimpan bila ada
+    const savedLanding = camera.kind === 'landing' && prevCamKey !== 'landing' ? readLandingCamera() : null
+    zoomRef.current = camera.kind === 'landing' && savedLanding ? savedLanding.scale / baseFrame.scale : 1
+
     const from = { x: posX.get(), y: posY.get(), s: scaleMV.get() }
-    const to = { x: targetTransform.x, y: targetTransform.y, s: targetTransform.scale }
+    const to = savedLanding
+      ? { x: savedLanding.x, y: savedLanding.y, s: savedLanding.scale }
+      : { x: targetTransform.x, y: targetTransform.y, s: targetTransform.scale }
     const controls = animate(0, 1, {
       duration: 0.75,
       ease: [0.22, 1, 0.36, 1],
