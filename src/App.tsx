@@ -55,7 +55,7 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <LazyMotion features={domAnimation} strict>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <MapTransitionProvider>
             <Root />
           </MapTransitionProvider>
