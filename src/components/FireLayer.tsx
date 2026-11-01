@@ -1,53 +1,32 @@
-import { useMemo } from 'react'
-import type { FirePoint } from '@/data/kalbar-fire-points'
+import type { MapFirePoint } from '@/data/fire-points'
+import { FIRE_POINT_RADIUS } from '@/data/fire-points'
 
 interface FireLayerProps {
-  readonly points: readonly FirePoint[]
+  readonly points: readonly MapFirePoint[]
   readonly className?: string
 }
 
-const KALBAR_OFFSET_X = 3404.09375
-const KALBAR_OFFSET_Y = 1079.00098
-const KALBAR_SCALE = 2.12089
-
-// Konversi koordinat layar 1440x1024 ke koordinat peta dasar 4096x1365
-function screenToMapCoord([sx, sy]: FirePoint): readonly [number, number] {
-  const mx = (sx + KALBAR_OFFSET_X) / KALBAR_SCALE + 31.5 / KALBAR_SCALE
-  const my = (sy + KALBAR_OFFSET_Y) / KALBAR_SCALE + 31.5 / KALBAR_SCALE
-  return [mx, my] as const
-}
-
-const MAP_RADIUS = 31.5 / KALBAR_SCALE
-
+// Titik api dalam koordinat peta 4096x1365, ikut ter-scale dan ter-pan bersama peta
 export function FireLayer({ points, className }: FireLayerProps) {
-  const mapPoints = useMemo(() => points.map(screenToMapCoord), [points])
-
   return (
     <svg
       viewBox="0 0 4096 1365"
       className={`pointer-events-none absolute inset-0 size-full overflow-visible ${className ?? ''}`}
     >
       <defs>
-        <radialGradient
-          id="fireDotGradient"
-          cx="0"
-          cy="0"
-          r="1"
-          gradientUnits="userSpaceOnUse"
-          gradientTransform={`scale(${MAP_RADIUS})`}
-        >
+        <radialGradient id="fireDotGradient">
           <stop offset="0%" stopColor="#e30000" stopOpacity="1" />
           <stop offset="45%" stopColor="#e30000" stopOpacity="0.8" />
           <stop offset="100%" stopColor="#e30000" stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      {mapPoints.map(([cx, cy], i) => (
+      {points.map(([cx, cy], i) => (
         <circle
           key={`${cx.toFixed(1)}-${cy.toFixed(1)}-${i}`}
           cx={cx}
           cy={cy}
-          r={MAP_RADIUS}
+          r={FIRE_POINT_RADIUS}
           fill="url(#fireDotGradient)"
           className="animate-pulse"
           style={{
