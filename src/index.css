@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+/* Token diambil dari variabel Figma (lihat docs/DESIGN-SYSTEM.md) */
+@theme {
+  --font-display: 'Cal Sans', 'DM Sans Variable', system-ui, sans-serif;
+  --font-sans: 'DM Sans Variable', system-ui, sans-serif;
+
+  --color-ink: #1d1d1d;
+  --color-paper: #f0f0f0;
+  --color-paper-2: #d7d7d7;
+
+  --color-navy-900: #162538;
+  --color-navy-800: #1e2e43;
+  --color-navy-700: #2b4566;
+
+  --color-line: #6e86d7;
+  --color-line-soft: #8aa3d0;
+
+  --color-stage: #1a2332;
+  --color-hover-blue: #ced7e3;
+  --color-map-label: #3f3f3f;
+  --color-map-highlight: #d9e1ff;
+
+  --color-danger: #b72f2f;
+  --color-danger-strong: #d8181c;
+  --color-on-danger: #f1f1f1;
+  --color-fire: #e30000;
+
+  --shadow-glow: 0 15px 18px -5px rgb(22 37 56 / 0.5);
+  --shadow-drop: 0 7px 7.5px rgb(0 0 0 / 0.11);
+  --drop-shadow-search: 0 15px 9px rgb(22 37 56 / 0.5);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-navy-900 font-sans text-paper antialiased;
+    /* Pinch trackpad diarahkan ke peta, bukan zoom halaman */
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+}
