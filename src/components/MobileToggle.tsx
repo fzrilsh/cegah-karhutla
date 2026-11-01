@@ -10,7 +10,7 @@ interface MobileToggleProps {
 export function MobileToggle({ mode, onChange, className }: MobileToggleProps) {
   return (
     <div
-      className={`flex h-[48px] w-full items-center rounded-[12px] border border-navy-700 bg-linear-to-r from-navy-800 to-navy-700 p-1 shadow-glow select-none ${
+      className={`flex h-[48px] items-center rounded-[12px] border border-navy-700 bg-linear-to-r from-navy-800 to-navy-700 p-1 shadow-glow select-none ${
         className ?? ''
       }`}
     >
