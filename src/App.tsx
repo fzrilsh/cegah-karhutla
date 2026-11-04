@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BrowserRouter, useLocation } from 'react-router'
 import { LazyMotion, MotionConfig, AnimatePresence, domAnimation, m } from 'motion/react'
 import { LandingPage } from '@/pages/LandingPage'
@@ -5,9 +6,15 @@ import { ProvincePage } from '@/pages/ProvincePage'
 import { SharedMap } from '@/components/SharedMap'
 import { MapTransitionProvider } from '@/lib/map-transition'
 import { useMobile } from '@/hooks/use-mobile'
+import { DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
+
+interface PageOverlayProps {
+  readonly weekIndex: number
+  readonly onWeekChange: (index: number) => void
+}
 
 // Overlay halaman yang crossfade di atas peta bersama
-function PageOverlay() {
+function PageOverlay({ weekIndex, onWeekChange }: PageOverlayProps) {
   const location = useLocation()
   const displayedLocation = location
 
@@ -29,7 +36,12 @@ function PageOverlay() {
         {isLanding ? (
           <LandingPage key="landing" />
         ) : (
-          <ProvincePage key={slug ?? 'province'} slug={slug} />
+          <ProvincePage
+            key={slug ?? 'province'}
+            slug={slug}
+            weekIndex={weekIndex}
+            onWeekChange={onWeekChange}
+          />
         )}
       </m.div>
     </AnimatePresence>
@@ -43,10 +55,17 @@ function Root() {
     ? location.pathname.split('/')[2]
     : undefined
 
+  // Minggu terpilih disimpan di sini supaya slider di halaman provinsi dan peta memakai nilai yang sama.
+  // Pindah halaman (termasuk ke landing) mengembalikannya ke minggu default.
+  const [selection, setSelection] = useState({ slug, weekIndex: DEFAULT_WEEK_INDEX })
+  if (selection.slug !== slug) setSelection({ slug, weekIndex: DEFAULT_WEEK_INDEX })
+  const weekIndex = selection.slug === slug ? selection.weekIndex : DEFAULT_WEEK_INDEX
+  const handleWeekChange = (index: number) => setSelection({ slug, weekIndex: index })
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-stage select-none">
-      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} />
-      <PageOverlay />
+      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} weekIndex={weekIndex} />
+      <PageOverlay weekIndex={weekIndex} onWeekChange={handleWeekChange} />
     </div>
   )
 }

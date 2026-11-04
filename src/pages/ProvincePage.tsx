@@ -18,15 +18,16 @@ import gasMaskIcon from '@/assets/icons/gas-mask.svg'
 
 interface ProvincePageProps {
   readonly slug?: string
+  readonly weekIndex: number
+  readonly onWeekChange: (index: number) => void
 }
 
-export function ProvincePage({ slug }: ProvincePageProps) {
+export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProps) {
   const isMobile = useMobile()
   const ui = useUiScale()
   const province = findProvince(slug)
 
   const [mode, setMode] = useState<MapLayerMode>('fire')
-  const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [sheetHeight, setSheetHeight] = useState(172)
 
@@ -138,7 +139,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
             <TimelineSlider
               metrics={weeklyMetrics}
               activeIndex={weekIndex}
-              onChange={setWeekIndex}
+              onChange={onWeekChange}
               compact
             />
           </div>
@@ -221,7 +222,7 @@ export function ProvincePage({ slug }: ProvincePageProps) {
         <TimelineSlider
           metrics={weeklyMetrics}
           activeIndex={weekIndex}
-          onChange={setWeekIndex}
+          onChange={onWeekChange}
         />
       </div>
 
