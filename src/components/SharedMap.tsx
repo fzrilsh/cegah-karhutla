@@ -88,17 +88,16 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
       map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-left')
 
-      // Fitur state butuh id unik per fitur, set sebelum addSource
       const geoData = provincesGeo as GeoJSON.FeatureCollection
-      geoData.features.forEach((f: GeoJSON.Feature, i: number) => {
-        f.id = f.properties?.slug ?? i
-      })
 
       map.on('load', () => {
         if (!map) return
         map.addSource(SOURCE_PROVINCES, {
           type: 'geojson',
           data: geoData,
+          // promoteId mengangkat properties.slug jadi feature id supaya
+          // setFeatureState (untuk highlight hover/aktif) mengenali fiturnya
+          promoteId: 'slug',
         })
 
         // Fill dasar semua provinsi (tipis, warna netral)
@@ -140,8 +139,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           },
         })
 
-        // Interaksi hover dan click pada fill
-        map.on('mousemove', FILL_LAYER, (e) => {
+        // Interaksi hover dan click pada layer teratas (hover layer menutupi fill dasar)
+        map.on('mousemove', FILL_HOVER_LAYER, (e) => {
           if (!map || cameraRef.current.kind !== 'landing') return
           const feature = e.features?.[0]
           const slug = feature?.properties?.slug as string | undefined
@@ -158,7 +157,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           }
         })
 
-        map.on('mouseleave', FILL_LAYER, () => {
+        map.on('mouseleave', FILL_HOVER_LAYER, () => {
           if (!map) return
           if (hoveredRef.current) {
             map.setFeatureState({ source: SOURCE_PROVINCES, id: hoveredRef.current }, { hover: false })
@@ -167,7 +166,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           map.getCanvas().style.cursor = ''
         })
 
-        map.on('click', FILL_LAYER, (e) => {
+        map.on('click', FILL_HOVER_LAYER, (e) => {
           if (cameraRef.current.kind !== 'landing') return
           const slug = e.features?.[0]?.properties?.slug as string | undefined
           if (slug) enterProvinceRef.current(slug)
