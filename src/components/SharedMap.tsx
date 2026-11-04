@@ -1,21 +1,21 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { m, animate, useMotionValue } from 'motion/react'
-import { provinceMapItems } from '@/data/provinces-map-data'
-import { ProvinceMarker } from '@/components/ProvinceMarker'
-import { FireLayer } from '@/components/FireLayer'
+import { useEffect, useRef, useState } from 'react'
+import type maplibregl from 'maplibre-gl'
 import { useMapTransition } from '@/lib/map-transition'
-import mapRaster from '@/assets/map/kalimantan.webp'
-
-const MAP_WIDTH = 4096
-const MAP_HEIGHT = 1365
-const DRAG_THRESHOLD = 5
-
-// Kotak gabungan semua provinsi (Sumatera + Kalimantan) di ruang peta 4096x1365
-const ALL_PROVINCES_FIT = { x: 1117, y: 431, width: 1203, height: 602 }
-
-// Titik api minggu aktif per provinsi (koordinat peta), diisi dari halaman provinsi
+import { provinceMetas, ALL_PROVINCES_BOUNDS } from '@/data/provinces-meta'
 import { provinceFirePoints } from '@/data/fire-points'
 import { DEFAULT_WEEK_INDEX } from '@/data/kalbar-weekly-metrics'
+import provincesGeo from '@/data/provinces-geo.json'
+import markerRing from '@/assets/map/marker-ring.svg'
+import markerCore from '@/assets/map/marker-core.svg'
+
+const BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+
+const FILL_LAYER = 'province-fill'
+const FILL_HOVER_LAYER = 'province-fill-hover'
+const BORDER_LAYER = 'province-border'
+const FIRE_LAYER = 'fire-points'
+const SOURCE_PROVINCES = 'provinces'
+const SOURCE_FIRE = 'fire-points'
 
 interface SharedMapProps {
   readonly isMobile: boolean
@@ -24,486 +24,395 @@ interface SharedMapProps {
   readonly weekIndex?: number
 }
 
-function getLandingFitInsets(isMobile: boolean) {
-  return isMobile ? { top: 128, bottom: 76 } : { top: 0, bottom: 0 }
-}
-
-function getProvinceFitInsets(isMobile: boolean) {
-  // bottom: tinggi sheet tertutup (172) + ringkasan melayang (sekitar 68) + jarak
-  return isMobile ? { top: 128, bottom: 260 } : { top: 0, bottom: 0 }
-}
-
-// Framing per provinsi dari bounding box (Figma hanya memuat framing Kalbar di 102:565)
-const PROVINCE_FRAME: Record<string, { x: number; y: number; width: number; height: number }> = {
-  'kalimantan-barat': { x: 1674, y: 580, width: 346, height: 331 },
-  'kalimantan-tengah': { x: 1800, y: 662, width: 323, height: 279 },
-  'kalimantan-selatan': { x: 2020, y: 793, width: 146, height: 186 },
-  'kalimantan-timur': { x: 1995, y: 550, width: 325, height: 321 },
-  'kalimantan-utara': { x: 2037, y: 430, width: 224, height: 218 },
-  riau: { x: 1117, y: 546, width: 238, height: 239 },
-  jambi: { x: 1184, y: 760, width: 217, height: 132 },
-  'sumatera-selatan': { x: 1244, y: 817, width: 256, height: 215 },
-}
-
-const MIN_ZOOM = 1
-const MAX_ZOOM = 4
-
-// Posisi peta landing disimpan di localStorage supaya kembali ke tempat semula
-// setelah keluar dari halaman detail
-const LANDING_CAM_KEY = 'ck-landing-camera'
-
-interface SavedCamera {
-  readonly x: number
-  readonly y: number
-  readonly scale: number
-}
-
-function readLandingCamera(): SavedCamera | null {
-  try {
-    const raw = localStorage.getItem(LANDING_CAM_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<SavedCamera>
-    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number' || typeof parsed.scale !== 'number') return null
-    return { x: parsed.x, y: parsed.y, scale: parsed.scale }
-  } catch {
-    return null
+function getFitPadding(isMobile: boolean, kind: 'landing' | 'province', viewport: { width: number; height: number }) {
+  if (kind === 'landing') {
+    return isMobile
+      ? { top: 140, bottom: 90, left: 16, right: 16 }
+      : { top: 40, bottom: 40, left: 40, right: 40 }
+  }
+  if (isMobile) {
+    return { top: 140, bottom: 270, left: 16, right: 16 }
+  }
+  // Desktop: ruang untuk bar atas, kartu kanan (434px + margin), slider bawah
+  const ui = Math.min(1.5, Math.max(0.6, viewport.width / 1440))
+  const marginX = Math.max(16, 0.0347 * viewport.width)
+  const marginTop = Math.max(12, 0.0488 * viewport.height)
+  return {
+    top: marginTop + 60 * ui + 24,
+    bottom: 140 + marginTop + 16,
+    left: marginX + 60 * ui + 24,
+    right: marginX + 434 * ui + 32,
   }
 }
 
-// Peta bersama yang tidak ikut unmount saat pindah route supaya kamera bergerak smooth
 export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekIndex = DEFAULT_WEEK_INDEX }: SharedMapProps) {
   const { camera, enterProvince } = useMapTransition()
   const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
+  const maplibreRef = useRef<typeof maplibregl | null>(null)
+  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const hoveredRef = useRef<string | null>(null)
+  const [isLoaded, setIsLoaded] = useState(false)
   const [viewport, setViewport] = useState({ width: 1440, height: 1024 })
-  const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
-  const lastHoveredRef = useRef<string | null>(null)
 
-  // Posisi dan skala peta dalam piksel layar. Transisi route memakai animate(),
-  // sedangkan drag menulis langsung tanpa spring supaya berhenti tepat saat dilepas.
-  // Nilai awal = framing landing di 1440x1024 supaya first paint langsung benar.
-  const posX = useMotionValue(-1172.5)
-  const posY = useMotionValue(-294.1)
-  const scaleMV = useMotionValue(1.101)
+  // Ref untuk nilai yang dipakai di event handler peta (didaftarkan sekali saat init)
+  const cameraRef = useRef(camera)
+  const enterProvinceRef = useRef(enterProvince)
+  useEffect(() => { cameraRef.current = camera }, [camera])
+  useEffect(() => { enterProvinceRef.current = enterProvince }, [enterProvince])
 
-  const [isPointerDown, setIsPointerDown] = useState(false)
-  const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
-  const hasMovedRef = useRef(false)
-  const userHasPannedRef = useRef(false)
-
+  // Inisialisasi peta sekali, maplibre di-lazy-load supaya tidak masuk initial bundle
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    if (!containerRef.current) return
+    let cancelled = false
+    let map: maplibregl.Map | null = null
+
+    const init = async () => {
+      const [module] = await Promise.all([
+        import('maplibre-gl'),
+        import('maplibre-gl/dist/maplibre-gl.css'),
+      ])
+      if (cancelled || !containerRef.current) return
+      const ml = module.default
+      maplibreRef.current = ml
+
+      map = new ml.Map({
+        container: containerRef.current,
+        style: BASEMAP_STYLE,
+        center: [112, -0.5],
+        zoom: 4.5,
+        minZoom: 3.5,
+        maxZoom: 12,
+        attributionControl: false,
+      })
+
+      map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-left')
+
+      // Fitur state butuh id unik per fitur, set sebelum addSource
+      const geoData = provincesGeo as GeoJSON.FeatureCollection
+      geoData.features.forEach((f: GeoJSON.Feature, i: number) => {
+        f.id = f.properties?.slug ?? i
+      })
+
+      map.on('load', () => {
+        if (!map) return
+        map.addSource(SOURCE_PROVINCES, {
+          type: 'geojson',
+          data: geoData,
+        })
+
+        // Fill dasar semua provinsi (tipis, warna netral)
+        map.addLayer({
+          id: FILL_LAYER,
+          type: 'fill',
+          source: SOURCE_PROVINCES,
+          paint: {
+            'fill-color': '#8aa3d0',
+            'fill-opacity': 0.08,
+          },
+        })
+
+        // Fill hover/aktif (fitur state untuk highlight)
+        map.addLayer({
+          id: FILL_HOVER_LAYER,
+          type: 'fill',
+          source: SOURCE_PROVINCES,
+          paint: {
+            'fill-color': '#d9e1ff',
+            'fill-opacity': [
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              0.35,
+              0,
+            ],
+          },
+        })
+
+        // Border provinsi
+        map.addLayer({
+          id: BORDER_LAYER,
+          type: 'line',
+          source: SOURCE_PROVINCES,
+          paint: {
+            'line-color': '#8aa3d0',
+            'line-width': 1.5,
+            'line-opacity': 0.7,
+          },
+        })
+
+        // Interaksi hover dan click pada fill
+        map.on('mousemove', FILL_LAYER, (e) => {
+          if (!map || cameraRef.current.kind !== 'landing') return
+          const feature = e.features?.[0]
+          const slug = feature?.properties?.slug as string | undefined
+          if (slug === hoveredRef.current) return
+          if (hoveredRef.current) {
+            map.setFeatureState({ source: SOURCE_PROVINCES, id: hoveredRef.current }, { hover: false })
+          }
+          hoveredRef.current = slug ?? null
+          if (slug) {
+            map.setFeatureState({ source: SOURCE_PROVINCES, id: slug }, { hover: true })
+            map.getCanvas().style.cursor = 'pointer'
+          } else {
+            map.getCanvas().style.cursor = ''
+          }
+        })
+
+        map.on('mouseleave', FILL_LAYER, () => {
+          if (!map) return
+          if (hoveredRef.current) {
+            map.setFeatureState({ source: SOURCE_PROVINCES, id: hoveredRef.current }, { hover: false })
+            hoveredRef.current = null
+          }
+          map.getCanvas().style.cursor = ''
+        })
+
+        map.on('click', FILL_LAYER, (e) => {
+          if (cameraRef.current.kind !== 'landing') return
+          const slug = e.features?.[0]?.properties?.slug as string | undefined
+          if (slug) enterProvinceRef.current(slug)
+        })
+
+        setIsLoaded(true)
+      })
+
+      mapRef.current = map
+    }
+
+    init()
+
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (entry) setViewport({ width: entry.contentRect.width, height: entry.contentRect.height })
     })
-    observer.observe(el)
-    return () => observer.disconnect()
+    observer.observe(containerRef.current)
+
+    const markers = markersRef.current
+    return () => {
+      cancelled = true
+      observer.disconnect()
+      markers.forEach((marker) => marker.remove())
+      markers.clear()
+      if (map) {
+        map.remove()
+        map = null
+      }
+      mapRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Faktor zoom pengguna (pinch / keyboard), terpisah dari framing route
-  const zoomRef = useRef(1)
-
-  const applyZoom = (factor: number, centerX?: number, centerY?: number) => {
-    const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomRef.current * factor))
-    if (next === zoomRef.current) return
-    const cx = centerX ?? baseFrame.ox
-    const cy = centerY ?? baseFrame.oy
-    const oldScale = baseFrame.scale * zoomRef.current
-    const newScale = baseFrame.scale * next
-    // Pertahankan titik peta di bawah kursor saat zoom
-    const mapX = (cx - posX.get()) / oldScale
-    const mapY = (cy - posY.get()) / oldScale
-    zoomRef.current = next
-    posX.set(cx - mapX * newScale)
-    posY.set(cy - mapY * newScale)
-    scaleMV.set(newScale)
-  }
-
-  // Hitung framing dasar (skala + pusat kotak peta) dari state route, tanpa zoom
-  const baseFrame = (() => {
-    if (camera.kind === 'landing') {
-      const { top, bottom } = getLandingFitInsets(isMobile)
-      const padding = isMobile ? 12 : 0
-      const areaW = viewport.width - padding * 2
-      const areaH = viewport.height - padding * 2 - top - bottom
-      // Landing memuat semua provinsi prioritas (Sumatera + Kalimantan) dengan margin
-      const margin = isMobile ? 1 : 0.92
-      const s = Math.min(areaW / ALL_PROVINCES_FIT.width, areaH / ALL_PROVINCES_FIT.height) * margin
-      return {
-        scale: s,
-        cx: ALL_PROVINCES_FIT.x + ALL_PROVINCES_FIT.width / 2,
-        cy: ALL_PROVINCES_FIT.y + ALL_PROVINCES_FIT.height / 2,
-        ox: padding + areaW / 2,
-        oy: padding + top + areaH / 2,
-      }
-    }
-    const frame =
-      (camera.kind === 'province' && PROVINCE_FRAME[camera.slug]) || PROVINCE_FRAME['kalimantan-barat']
-    // Area bebas overlay: bar atas, kartu kanan, dan slider bawah (desktop);
-    // bar atas + toggle dan bottom sheet (mobile)
-    let freeX: number
-    let freeY: number
-    let freeW: number
-    let freeH: number
-    if (isMobile) {
-      const padding = 12
-      const { top, bottom } = getProvinceFitInsets(isMobile)
-      freeX = padding
-      freeY = padding + top
-      freeW = viewport.width - padding * 2
-      freeH = viewport.height - padding * 2 - top - bottom
-    } else {
-      const ui = Math.min(1.5, Math.max(0.6, viewport.width / 1440))
-      const marginX = Math.max(16, 0.0347 * viewport.width)
-      const marginTop = Math.max(12, 0.0488 * viewport.height)
-      const left = marginX + 60 * ui + 24
-      const right = marginX + 434 * ui + 24
-      const top = marginTop + 60 * ui + 16
-      const bottom = 140 + marginTop + 16
-      freeX = left
-      freeY = top
-      freeW = viewport.width - left - right
-      freeH = viewport.height - top - bottom
-    }
-    // Skala zoom memperhitungkan luas provinsi: sFit mengisi area bebas, sCap membatasi
-    // provinsi kecil agar tidak terlalu ngezoom, FIT_MARGIN memberi ruang napas.
-    const FIT_MARGIN = 0.85
-    const diagRef = 380 // diagonal Kalbar (referensi framing Figma 102:565)
-    const sFit = Math.min(freeW / frame.width, freeH / frame.height)
-    const diag = Math.hypot(frame.width, frame.height)
-    const sCap = (freeW / diagRef) * Math.min(1, diag / diagRef)
-    const s = Math.min(sFit, sCap) * FIT_MARGIN
-    return {
-      scale: s,
-      cx: frame.x + frame.width / 2,
-      cy: frame.y + frame.height / 2,
-      ox: freeX + freeW / 2,
-      oy: freeY + freeH / 2,
-    }
-  })()
-
-  // Transform kamera target = framing dasar dikali zoom, dipusatkan ke tengah area bebas
-  const targetTransform = (() => {
-    const scale = baseFrame.scale * zoomRef.current
-    return {
-      scale,
-      x: baseFrame.ox - baseFrame.cx * scale,
-      y: baseFrame.oy - baseFrame.cy * scale,
-    }
-  })()
-
-  // Transisi kamera smooth saat route atau ukuran viewport berubah. Ketiga properti
-  // (x, y, scale) dianimasikan dari satu progres 0 sampai 1 dan diinterpolasi bersama
-  // supaya selalu konsisten (x = ox - cx*scale) dan tidak ada getaran di akhir akibat
-  // spring independen yang selesai pada waktu berbeda.
-  const camKey = camera.kind === 'province' ? `province:${camera.slug}` : 'landing'
-  const prevCamKeyRef = useRef(camKey)
+  // Marker provinsi (hanya di landing), pakai maplibre Marker dengan elemen HTML kustom
   useEffect(() => {
-    const prevCamKey = prevCamKeyRef.current
-    prevCamKeyRef.current = camKey
-    userHasPannedRef.current = false
+    const map = mapRef.current
+    if (!map || !isLoaded) return
 
-    // Simpan kamera landing tepat sebelum masuk halaman detail
-    if (prevCamKey === 'landing' && camera.kind === 'province') {
-      try {
-        const saved: SavedCamera = { x: posX.get(), y: posY.get(), scale: scaleMV.get() }
-        localStorage.setItem(LANDING_CAM_KEY, JSON.stringify(saved))
-      } catch {
-        // abaikan kegagalan storage
+    const showMarkers = camera.kind === 'landing'
+
+    provinceMetas.forEach((meta) => {
+      let marker = markersRef.current.get(meta.slug)
+
+      if (!showMarkers) {
+        if (marker) {
+          marker.remove()
+          markersRef.current.delete(meta.slug)
+        }
+        return
       }
+
+      if (!marker) {
+        const el = document.createElement('button')
+        el.type = 'button'
+        el.className = 'province-map-marker'
+        el.setAttribute('aria-label', `Buka data ${meta.name}`)
+        el.style.cssText = `
+          position: relative;
+          width: 99px;
+          height: 99px;
+          cursor: pointer;
+          background: none;
+          border: none;
+          padding: 0;
+          transition: transform 0.18s ease-out;
+          transform-origin: center center;
+        `
+
+        const ring = document.createElement('img')
+        ring.src = markerRing
+        ring.alt = ''
+        ring.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;'
+
+        const core = document.createElement('img')
+        core.src = markerCore
+        core.alt = ''
+        core.style.cssText = 'position:absolute;inset:10px;width:79px;height:79px;pointer-events:none;'
+
+        const label = document.createElement('div')
+        label.style.cssText = `
+          position:absolute;
+          inset:0;
+          display:flex;
+          flex-direction:column;
+          align-items:center;
+          justify-content:center;
+          pointer-events:none;
+          font-family:var(--font-display);
+          font-size:12px;
+          line-height:14px;
+          color:var(--color-map-label);
+          text-align:center;
+        `
+        const p1 = document.createElement('p')
+        p1.textContent = meta.line1
+        p1.style.margin = '0'
+        label.appendChild(p1)
+        if (meta.line2) {
+          const p2 = document.createElement('p')
+          p2.textContent = meta.line2
+          p2.style.margin = '0'
+          label.appendChild(p2)
+        }
+
+        el.appendChild(ring)
+        el.appendChild(core)
+        el.appendChild(label)
+
+        el.addEventListener('mouseenter', () => {
+          el.style.transform = 'scale(1.111)'
+          if (mapRef.current) {
+            mapRef.current.setFeatureState({ source: SOURCE_PROVINCES, id: meta.slug }, { hover: true })
+          }
+        })
+        el.addEventListener('mouseleave', () => {
+          el.style.transform = 'scale(1)'
+          if (mapRef.current) {
+            mapRef.current.setFeatureState({ source: SOURCE_PROVINCES, id: meta.slug }, { hover: false })
+          }
+        })
+        el.addEventListener('click', (e) => {
+          e.stopPropagation()
+          enterProvince(meta.slug)
+        })
+
+        const ml = maplibreRef.current
+        if (!ml) return
+
+        marker = new ml.Marker({ element: el, anchor: 'center' })
+          .setLngLat([meta.markerLng, meta.markerLat])
+          .addTo(map)
+
+        markersRef.current.set(meta.slug, marker)
+      }
+    })
+
+    // Hapus marker yang tidak diperlukan lagi
+    markersRef.current.forEach((marker, slug) => {
+      if (!showMarkers) {
+        marker.remove()
+        markersRef.current.delete(slug)
+      }
+    })
+  }, [isLoaded, camera.kind, enterProvince])
+
+  // Highlight provinsi aktif di halaman detail
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+
+    provinceMetas.forEach((meta) => {
+      map.setFeatureState(
+        { source: SOURCE_PROVINCES, id: meta.slug },
+        { hover: meta.slug === activeProvinceSlug },
+      )
+    })
+  }, [isLoaded, activeProvinceSlug])
+
+  // Titik api: GeoJSON circle layer
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+
+    const showFire = camera.kind === 'province' && mode === 'fire' && camera.slug in provinceFirePoints
+
+    // Bersihkan layer lama
+    if (map.getLayer(FIRE_LAYER)) map.removeLayer(FIRE_LAYER)
+    if (map.getSource(SOURCE_FIRE)) map.removeSource(SOURCE_FIRE)
+
+    if (!showFire) return
+
+    const slugWeeks = provinceFirePoints[camera.slug]
+    const points = slugWeeks?.[weekIndex] ?? slugWeeks?.[DEFAULT_WEEK_INDEX] ?? []
+
+    if (points.length === 0) return
+
+    const geojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: points.map(([lng, lat]) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+      })),
     }
 
-    // Saat kembali ke landing, pulihkan kamera tersimpan bila ada
-    const savedLanding = camera.kind === 'landing' && prevCamKey !== 'landing' ? readLandingCamera() : null
-    zoomRef.current = camera.kind === 'landing' && savedLanding ? savedLanding.scale / baseFrame.scale : 1
+    map.addSource(SOURCE_FIRE, { type: 'geojson', data: geojson })
 
-    const from = { x: posX.get(), y: posY.get(), s: scaleMV.get() }
-    const to = savedLanding
-      ? { x: savedLanding.x, y: savedLanding.y, s: savedLanding.scale }
-      : { x: targetTransform.x, y: targetTransform.y, s: targetTransform.scale }
-    const controls = animate(0, 1, {
-      duration: 0.75,
-      ease: [0.22, 1, 0.36, 1],
-      onUpdate: (t) => {
-        posX.set(from.x + (to.x - from.x) * t)
-        posY.set(from.y + (to.y - from.y) * t)
-        scaleMV.set(from.s + (to.s - from.s) * t)
+    map.addLayer({
+      id: FIRE_LAYER,
+      type: 'circle',
+      source: SOURCE_FIRE,
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          4, 6,
+          8, 14,
+          12, 22,
+        ],
+        'circle-color': '#e30000',
+        'circle-opacity': 0.85,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-opacity': 0.6,
       },
     })
-    return () => {
-      controls.stop()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camKey, viewport.width, viewport.height, isMobile])
+  }, [isLoaded, camera, mode, weekIndex])
 
-  // Marker mengecil di HP
-  const markerScale = isMobile ? 0.82 : 1
-
-  const showMarkers = camera.kind === 'landing'
-
-  // Titik api tampil di halaman provinsi yang punya data (mode Titik Api)
-  const showFire =
-    camera.kind === 'province' && mode === 'fire' && camera.slug in provinceFirePoints
-
-  const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val))
-
-  // Collision akurat: konversi titik kursor ke koordinat peta, lalu uji isPointInFill
-  // pada tiap path sehingga hanya bentuk yang benar-benar berisi titik yang menyala
-  // (bukan sekadar tumpang tindih kotak bounding SVG).
-  const svgPointRef = useRef<DOMPoint | null>(null)
-  const resolveHoveredSlug = (clientX: number, clientY: number) => {
-    const container = containerRef.current
-    if (!container) return lastHoveredRef.current
-    const rect = container.getBoundingClientRect()
-    // Kalau kursor di atas UI overlay (bukan dasar peta), pertahankan hover lama
-    const top = document.elementFromPoint(clientX, clientY)
-    if (top && top instanceof HTMLElement && container.contains(top) && top !== container) {
-      return lastHoveredRef.current
-    }
-    if (!svgPointRef.current) {
-      const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svgPointRef.current = tmp.createSVGPoint()
-    }
-    const pt = svgPointRef.current
-    const s = scaleMV.get()
-    const mapX = (clientX - rect.left - posX.get()) / s
-    const mapY = (clientY - rect.top - posY.get()) / s
-    const paths = container.querySelectorAll<SVGPathElement>('path[data-province]')
-    for (const path of paths) {
-      const svg = path.ownerSVGElement
-      if (!svg) continue
-      // viewBox svg identik dengan ukuran penempatannya di ruang peta (skala 1:1),
-      // jadi koordinat viewBox = koordinat peta dikurangi offset left/top svg
-      pt.x = mapX - parseFloat(svg.style.left || '0')
-      pt.y = mapY - parseFloat(svg.style.top || '0')
-      if (pt.x >= 0 && pt.y >= 0 && path.isPointInFill(pt)) {
-        return path.dataset.province ?? null
-      }
-    }
-    return null
-  }
-
-  // Pan hanya di landing; di halaman detail peta terkunci pada framing provinsi
-  const canPan = camera.kind === 'landing'
-
-  const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return
-    if (!canPan) return
-    // Hentikan animasi transisi route yang masih berjalan supaya drag tidak ditimpa
-    posX.stop()
-    posY.stop()
-    scaleMV.stop()
-    setIsPointerDown(true)
-    hasMovedRef.current = false
-    dragStartRef.current = {
-      pointerX: e.clientX,
-      pointerY: e.clientY,
-      startX: posX.get(),
-      startY: posY.get(),
-    }
-    // Tidak memakai setPointerCapture supaya click tetap sampai ke path provinsi saat bukan drag
-  }
-
-  const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== 'mouse') return
-    // Hover provinsi hanya aktif di landing; di halaman detail fokus tetap di provinsi aktif
-    if (camera.kind !== 'landing') return
-    const slug = resolveHoveredSlug(e.clientX, e.clientY)
-    if (slug !== lastHoveredRef.current) {
-      lastHoveredRef.current = slug
-      setHoveredSlug(slug)
-    }
-  }
-
-  const handlePointerUp = () => {
-    dragStartRef.current = null
-    setIsPointerDown(false)
-  }
-
-  // Saat drag berlangsung, dengarkan gerakan pointer di window supaya tetap terlacak
-  // meski kursor keluar dari wadah peta (tanpa setPointerCapture).
+  // Framing kamera mengikuti route
   useEffect(() => {
-    if (!isPointerDown) return
-    const onMove = (e: PointerEvent) => {
-      if (!dragStartRef.current) return
-      const dx = e.clientX - dragStartRef.current.pointerX
-      const dy = e.clientY - dragStartRef.current.pointerY
-      if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
-        hasMovedRef.current = true
-        userHasPannedRef.current = true
-      }
-      if (!hasMovedRef.current) return
-      const s = scaleMV.get()
-      const w = MAP_WIDTH * s
-      const h = MAP_HEIGHT * s
-      posX.set(clamp(dragStartRef.current.startX + dx, Math.min(0, viewport.width - w), 0))
-      posY.set(clamp(dragStartRef.current.startY + dy, Math.min(0, viewport.height - h), 0))
-    }
-    const onUp = () => {
-      dragStartRef.current = null
-      setIsPointerDown(false)
-      // Drag menulis langsung ke motion value tanpa spring, jadi peta berhenti tepat
-      // saat dilepas. hasMovedRef tidak di-reset di sini supaya click tepat setelah
-      // drag tidak ikut memicu select; di-reset pada pointerdown berikutnya.
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
-    // Lepas drag juga saat window kehilangan fokus (misal Alt+Tab di tengah drag)
-    window.addEventListener('blur', onUp)
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
-      window.removeEventListener('blur', onUp)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPointerDown, viewport.width, viewport.height])
+    const map = mapRef.current
+    if (!map || !isLoaded) return
 
-  const handlePointerLeave = () => {
-    lastHoveredRef.current = null
-    setHoveredSlug(null)
-  }
+    const padding = getFitPadding(isMobile, camera.kind, viewport)
 
-  const lastSelectRef = useRef(0)
-  const handleProvinceSelect = (slug: string) => {
-    if (hasMovedRef.current) return
-    // Hindari pemicu ganda dari pointerup + click pada gestur yang sama
-    const now = performance.now()
-    if (now - lastSelectRef.current < 400) return
-    lastSelectRef.current = now
-    enterProvince(slug)
-  }
+    if (camera.kind === 'landing') {
+      map.fitBounds(
+        [
+          [ALL_PROVINCES_BOUNDS[0], ALL_PROVINCES_BOUNDS[1]],
+          [ALL_PROVINCES_BOUNDS[2], ALL_PROVINCES_BOUNDS[3]],
+        ],
+        { padding, duration: 750, essential: true },
+      )
+      return
+    }
 
-  // Pinch di trackpad (ctrl+wheel) dan Cmd +/- men-zoom peta, bukan halaman
-  useEffect(() => {
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey) {
-        e.preventDefault()
-        applyZoom(Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY)
-      }
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.key === '=' || e.key === '+') {
-        e.preventDefault()
-        applyZoom(1.25)
-      } else if (e.key === '-') {
-        e.preventDefault()
-        applyZoom(1 / 1.25)
-      } else if (e.key === '0') {
-        e.preventDefault()
-        applyZoom(1 / zoomRef.current)
-      }
-    }
-    window.addEventListener('wheel', onWheel, { passive: false })
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('wheel', onWheel)
-      window.removeEventListener('keydown', onKey)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewport.width, viewport.height, baseFrame.scale])
+    const meta = provinceMetas.find((m) => m.slug === camera.slug)
+    if (!meta) return
 
-  const slugWeeks = camera.kind === 'province' ? provinceFirePoints[camera.slug] : undefined
-  const firePoints = slugWeeks?.[weekIndex] ?? slugWeeks?.[DEFAULT_WEEK_INDEX] ?? []
+    map.fitBounds(
+      [
+        [meta.bounds[0], meta.bounds[1]],
+        [meta.bounds[2], meta.bounds[3]],
+      ],
+      { padding, duration: 750, essential: true },
+    )
+  }, [isLoaded, camera, isMobile, viewport])
 
   return (
     <div
       ref={containerRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      className={`absolute inset-0 size-full overflow-hidden select-none ${
-        canPan ? (isPointerDown ? 'cursor-grabbing' : 'cursor-grab') : ''
-      }`}
-      style={{ touchAction: 'none' }}
-    >
-      <m.div
-        style={{
-          width: MAP_WIDTH,
-          height: MAP_HEIGHT,
-          x: posX,
-          y: posY,
-          scale: scaleMV,
-          transformOrigin: 'top left',
-        }}
-        className="relative"
-      >
-        <img
-          src={mapRaster}
-          alt="Peta Kalimantan"
-          draggable={false}
-          className="pointer-events-none absolute left-0 top-0 size-full max-w-none"
-        />
-
-        {provinceMapItems.map((item) => {
-          const isHovered = hoveredSlug === item.slug || activeProvinceSlug === item.slug
-          return (
-            <svg
-              key={item.slug}
-              viewBox={item.viewBox}
-              className="overflow-visible"
-              style={{
-                position: 'absolute',
-                left: item.x,
-                top: item.y,
-                width: item.width,
-                height: item.height,
-                pointerEvents: 'none',
-              }}
-            >
-              <path
-                d={item.pathData}
-                fill={isHovered ? '#d9e1ff' : 'none'}
-                fillOpacity={isHovered ? 0.3 : 0}
-                stroke="#8aa3d0"
-                strokeWidth={2}
-                data-province={item.slug}
-                className="cursor-pointer transition-colors duration-150"
-                style={{ pointerEvents: 'visiblePainted' }}
-                onPointerUp={(e) => {
-                  // Container menangkap pointer saat down, jadi andalkan pointerup di path
-                  e.stopPropagation()
-                  handleProvinceSelect(item.slug)
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleProvinceSelect(item.slug)
-                }}
-              />
-            </svg>
-          )
-        })}
-
-        {showFire && <FireLayer points={firePoints} />}
-
-        {showMarkers &&
-          provinceMapItems.map((item) => (
-            <div
-              key={item.slug}
-              style={{
-                position: 'absolute',
-                left: item.markerX,
-                top: item.markerY,
-                width: 99,
-                height: 99,
-                transform: `scale(${markerScale})`,
-                transformOrigin: 'center center',
-              }}
-            >
-              <ProvinceMarker
-                item={item}
-                isHovered={hoveredSlug === item.slug}
-                onHover={setHoveredSlug}
-                onSelect={handleProvinceSelect}
-              />
-            </div>
-          ))}
-      </m.div>
-    </div>
+      className="absolute inset-0 size-full"
+      style={{ background: '#e8e8e8' }}
+    />
   )
 }
