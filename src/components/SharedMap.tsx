@@ -208,6 +208,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     if (!map || !isLoaded) return
 
     const showMarkers = camera.kind === 'landing'
+    const baseScale = isMobile ? 0.82 : 1
 
     provinceMetas.forEach((meta) => {
       let marker = markersRef.current.get(meta.slug)
@@ -225,6 +226,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         el.type = 'button'
         el.className = 'province-map-marker'
         el.setAttribute('aria-label', `Buka data ${meta.name}`)
+        // Elemen luar polos: MapLibre menimpa style.transform untuk positioning,
+        // jadi hover scale ditaruh di elemen visual di dalamnya.
         el.style.cssText = `
           position: relative;
           width: 99px;
@@ -233,19 +236,27 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           background: none;
           border: none;
           padding: 0;
+        `
+
+        const visual = document.createElement('div')
+        visual.style.cssText = `
+          position: absolute;
+          inset: 0;
           transition: transform 0.18s ease-out;
           transform-origin: center center;
+          pointer-events: none;
+          transform: scale(${baseScale});
         `
 
         const ring = document.createElement('img')
         ring.src = markerRing
         ring.alt = ''
-        ring.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;'
+        ring.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
 
         const core = document.createElement('img')
         core.src = markerCore
         core.alt = ''
-        core.style.cssText = 'position:absolute;inset:10px;width:79px;height:79px;pointer-events:none;'
+        core.style.cssText = 'position:absolute;inset:10px;width:79px;height:79px;'
 
         const label = document.createElement('div')
         label.style.cssText = `
@@ -255,7 +266,6 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           flex-direction:column;
           align-items:center;
           justify-content:center;
-          pointer-events:none;
           font-family:var(--font-display);
           font-size:12px;
           line-height:14px;
@@ -273,18 +283,19 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           label.appendChild(p2)
         }
 
-        el.appendChild(ring)
-        el.appendChild(core)
-        el.appendChild(label)
+        visual.appendChild(ring)
+        visual.appendChild(core)
+        visual.appendChild(label)
+        el.appendChild(visual)
 
         el.addEventListener('mouseenter', () => {
-          el.style.transform = 'scale(1.111)'
+          visual.style.transform = `scale(${baseScale * 1.111})`
           if (mapRef.current) {
             mapRef.current.setFeatureState({ source: SOURCE_PROVINCES, id: meta.slug }, { hover: true })
           }
         })
         el.addEventListener('mouseleave', () => {
-          el.style.transform = 'scale(1)'
+          visual.style.transform = `scale(${baseScale})`
           if (mapRef.current) {
             mapRef.current.setFeatureState({ source: SOURCE_PROVINCES, id: meta.slug }, { hover: false })
           }
@@ -302,6 +313,10 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           .addTo(map)
 
         markersRef.current.set(meta.slug, marker)
+      } else {
+        // Marker sudah ada: sinkronkan base scale (misal setelah resize melewati breakpoint)
+        const visual = marker.getElement().firstElementChild as HTMLElement | null
+        if (visual) visual.style.transform = `scale(${baseScale})`
       }
     })
 
@@ -312,7 +327,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         markersRef.current.delete(slug)
       }
     })
-  }, [isLoaded, camera.kind, enterProvince])
+  }, [isLoaded, camera.kind, enterProvince, isMobile])
 
   // Highlight provinsi aktif di halaman detail
   useEffect(() => {
