@@ -8,7 +8,7 @@ import provincesGeo from '@/data/provinces-geo.json'
 import markerRing from '@/assets/map/marker-ring.svg'
 import markerCore from '@/assets/map/marker-core.svg'
 
-const BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+const BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
 const FILL_LAYER = 'province-fill'
 const FILL_HOVER_LAYER = 'province-fill-hover'
@@ -125,14 +125,14 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           promoteId: 'slug',
         })
 
-        // Fill dasar semua provinsi (tipis, warna netral)
+        // Fill dasar semua provinsi (tipis, warna netral di peta gelap)
         map.addLayer({
           id: FILL_LAYER,
           type: 'fill',
           source: SOURCE_PROVINCES,
           paint: {
-            'fill-color': '#8aa3d0',
-            'fill-opacity': 0.08,
+            'fill-color': '#a8bfff',
+            'fill-opacity': 0.06,
           },
         })
 
@@ -146,9 +146,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
             'fill-opacity': [
               'case',
               ['boolean', ['feature-state', 'hover'], false],
-              0.35,
+              0.28,
               ['boolean', ['feature-state', 'active'], false],
-              0.45,
+              0.38,
               0,
             ],
           },
@@ -160,9 +160,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           type: 'line',
           source: SOURCE_PROVINCES,
           paint: {
-            'line-color': '#8aa3d0',
+            'line-color': '#a8bfff',
             'line-width': 1.5,
-            'line-opacity': 0.7,
+            'line-opacity': 0.55,
           },
         })
 
@@ -483,7 +483,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     <div
       ref={containerRef}
       className="absolute inset-0 size-full"
-      style={{ background: '#e8e8e8' }}
+      style={{ background: 'var(--color-stage)' }}
     />
   )
 }
