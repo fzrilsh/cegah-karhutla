@@ -58,8 +58,33 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   // Ref untuk nilai yang dipakai di event handler peta (didaftarkan sekali saat init)
   const cameraRef = useRef(camera)
   const enterProvinceRef = useRef(enterProvince)
+  const prevCameraRef = useRef(camera)
   useEffect(() => { cameraRef.current = camera }, [camera])
   useEffect(() => { enterProvinceRef.current = enterProvince }, [enterProvince])
+
+  // Posisi kamera landing disimpan di localStorage supaya kembali ke tempat semula
+  // setelah keluar dari halaman detail (sama seperti implementasi peta lama)
+  const LANDING_CAM_KEY = 'ck-landing-camera'
+
+  const readLandingCamera = (): { center: [number, number]; zoom: number } | null => {
+    try {
+      const raw = localStorage.getItem(LANDING_CAM_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { center?: [number, number]; zoom?: number }
+      if (
+        !Array.isArray(parsed.center) ||
+        parsed.center.length !== 2 ||
+        typeof parsed.center[0] !== 'number' ||
+        typeof parsed.center[1] !== 'number' ||
+        typeof parsed.zoom !== 'number'
+      ) {
+        return null
+      }
+      return { center: [parsed.center[0], parsed.center[1]], zoom: parsed.zoom }
+    } catch {
+      return null
+    }
+  }
 
   // Inisialisasi peta sekali, maplibre di-lazy-load supaya tidak masuk initial bundle
   useEffect(() => {
@@ -122,6 +147,8 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
               'case',
               ['boolean', ['feature-state', 'hover'], false],
               0.35,
+              ['boolean', ['feature-state', 'active'], false],
+              0.45,
               0,
             ],
           },
@@ -329,18 +356,21 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     })
   }, [isLoaded, camera.kind, enterProvince, isMobile])
 
-  // Highlight provinsi aktif di halaman detail
+  // Highlight provinsi aktif di halaman detail, pakai feature-state terpisah
+  // supaya tidak direset oleh handler hover di landing
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
 
+    const activeSlug = camera.kind === 'province' ? camera.slug : activeProvinceSlug
+
     provinceMetas.forEach((meta) => {
       map.setFeatureState(
         { source: SOURCE_PROVINCES, id: meta.slug },
-        { hover: meta.slug === activeProvinceSlug },
+        { active: meta.slug === activeSlug },
       )
     })
-  }, [isLoaded, activeProvinceSlug])
+  }, [isLoaded, camera, activeProvinceSlug])
 
   // Titik api: GeoJSON circle layer
   useEffect(() => {
@@ -400,7 +430,33 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
     const padding = getFitPadding(isMobile, camera.kind, viewport)
 
+    // Simpan kamera landing tepat sebelum masuk halaman detail
+    const prevCam = prevCameraRef.current
+    prevCameraRef.current = camera
+    if (prevCam.kind === 'landing' && camera.kind === 'province') {
+      try {
+        const c = map.getCenter()
+        localStorage.setItem(
+          LANDING_CAM_KEY,
+          JSON.stringify({ center: [c.lng, c.lat], zoom: map.getZoom() }),
+        )
+      } catch {
+        // abaikan kegagalan storage
+      }
+    }
+
     if (camera.kind === 'landing') {
+      // Saat kembali ke landing, pulihkan kamera tersimpan bila ada
+      const saved = prevCam.kind === 'province' ? readLandingCamera() : null
+      if (saved) {
+        map.easeTo({
+          center: saved.center,
+          zoom: saved.zoom,
+          duration: 750,
+          essential: true,
+        })
+        return
+      }
       map.fitBounds(
         [
           [ALL_PROVINCES_BOUNDS[0], ALL_PROVINCES_BOUNDS[1]],
