@@ -226,16 +226,17 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         el.type = 'button'
         el.className = 'province-map-marker'
         el.setAttribute('aria-label', `Buka data ${meta.name}`)
-        // Elemen luar polos: MapLibre menimpa style.transform untuk positioning,
-        // jadi hover scale ditaruh di elemen visual di dalamnya.
+        // Elemen luar polos: MapLibre mengelola position (absolute lewat class
+        // maplibregl-marker) dan style.transform untuk positioning, jadi jangan
+        // menimpa keduanya. Hover scale ditaruh di elemen visual di dalamnya.
         el.style.cssText = `
-          position: relative;
           width: 99px;
           height: 99px;
           cursor: pointer;
           background: none;
           border: none;
           padding: 0;
+          display: block;
         `
 
         const visual = document.createElement('div')
