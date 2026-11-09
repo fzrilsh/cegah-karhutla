@@ -1,7 +1,7 @@
 // Tombol zoom + tombol lokasi, sesuai Figma (kanan bawah peta nasional).
 export function MapActionButtons() {
   return (
-    <div className="pointer-events-auto absolute bottom-6 right-6 z-30 flex flex-col gap-2 md:bottom-[50px] md:right-[50px]">
+    <div className="pointer-events-auto absolute bottom-4 right-4 z-30 flex flex-col gap-2 md:bottom-[50px] md:right-[max(16px,calc((100%-1120px)/2))]">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent('map-zoom-in'))}

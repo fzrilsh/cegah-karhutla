@@ -46,7 +46,7 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
 
   return (
     <>
-      <header className="pointer-events-auto absolute inset-x-0 top-0 z-40 flex h-[64px] items-center justify-between rounded-b-[6px] bg-linear-to-r from-green-900/5 to-black/5 px-4 backdrop-blur-[2px] md:h-[79px] md:px-[50px]">
+      <header className="pointer-events-auto absolute inset-x-0 top-0 z-40 flex h-[64px] items-center justify-between rounded-b-[6px] bg-linear-to-r from-green-900/5 to-black/5 px-4 backdrop-blur-[2px] md:h-[79px] md:px-[max(16px,calc((100%-1120px)/2))]">
         <div className="flex items-center gap-3 md:gap-5">
           {showBack && (
             <button type="button" onClick={onBack ?? goLanding} className="cursor-pointer" aria-label="Kembali">

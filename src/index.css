@@ -50,6 +50,18 @@
     height: 100%;
   }
 
+  /* Atribusi peta ikut kolom isi 1120px dan jarak bawah tombol peta (16px, 50px di md). */
+  .maplibregl-ctrl-bottom-left {
+    margin-left: max(16px, calc((100vw - 1120px) / 2));
+    margin-bottom: 16px;
+  }
+
+  @media (min-width: 768px) {
+    .maplibregl-ctrl-bottom-left {
+      margin-bottom: 50px;
+    }
+  }
+
   body {
     @apply bg-green-900 font-sans text-paper antialiased;
     overscroll-behavior: none;
