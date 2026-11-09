@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { provinces, type Province } from '@/data/provinces'
 import { useMapTransition } from '@/lib/map-transition'
 import { WargaLaporModal } from '@/components/WargaLaporModal'
 import iconSearch from '@/assets/landing/icon-search.svg'
@@ -11,8 +12,37 @@ interface AppNavbarProps {
 
 // Navbar desain (node 252:22455), dipakai landing, /peta, dan detail provinsi.
 export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
-  const { goLanding } = useMapTransition()
+  const { goLanding, enterProvince } = useMapTransition()
   const [laporOpen, setLaporOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  const results = provinces.filter((p) =>
+    p.name.toLowerCase().includes(query.toLowerCase().trim()),
+  )
+
+  const select = (province: Province) => {
+    setQuery('')
+    setSearchOpen(false)
+    enterProvince(province.slug)
+  }
+
+  useEffect(() => {
+    if (!searchOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSearchOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [searchOpen])
 
   return (
     <>
@@ -33,14 +63,54 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
         </div>
 
         <nav className="flex items-center gap-4 md:gap-8">
-          <button
-            type="button"
-            className="hidden cursor-pointer items-center gap-1 text-white md:flex"
-            aria-label="Cari provinsi"
-          >
-            <span className="font-nav text-[18px] font-medium">Cari Provinsi</span>
-            <img src={iconSearch} alt="" className="size-6 -translate-y-px" />
-          </button>
+          <div ref={searchRef} className="relative hidden md:block">
+            {searchOpen ? (
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && query.trim() && results[0]) select(results[0])
+                }}
+                placeholder="Cari provinsi..."
+                aria-label="Cari provinsi"
+                className="h-9 w-[200px] border-b border-white/40 bg-transparent font-nav text-[18px] font-medium text-white placeholder:text-white/50 focus:border-white focus:outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="flex cursor-pointer items-center gap-1 text-white"
+                aria-label="Cari provinsi"
+              >
+                <span className="font-nav text-[18px] font-medium">Cari Provinsi</span>
+                <img src={iconSearch} alt="" className="size-6 -translate-y-px" />
+              </button>
+            )}
+
+            {searchOpen && query.trim() && (
+              <ul className="absolute inset-x-0 top-11 flex max-h-[320px] flex-col overflow-y-auto rounded-[10px] bg-paper shadow-card">
+                {results.length > 0 ? (
+                  results.map((p) => (
+                    <li key={p.slug}>
+                      <button
+                        type="button"
+                        onClick={() => select(p)}
+                        className="flex min-h-[40px] w-full cursor-pointer items-center px-4 py-2 text-left font-nav text-[16px] leading-tight text-ink transition-colors hover:bg-hover-blue"
+                      >
+                        {p.name}
+                      </button>
+                    </li>
+                  ))
+                ) : (
+                  <li className="px-4 py-3 font-sans text-[13px] text-ink/60">
+                    Provinsi tidak ditemukan
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
 
           <button
             type="button"
