@@ -55,15 +55,31 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'provin
   if (isMobile) {
     return { top: 140, bottom: 270, left: 16, right: 16 }
   }
-  // Desktop: ruang untuk bar atas, kartu kanan (434px + margin), slider bawah
-  const ui = Math.min(1.5, Math.max(0.6, viewport.width / 1440))
-  const marginX = Math.max(16, 0.0347 * viewport.width)
-  const marginTop = Math.max(12, 0.0488 * viewport.height)
+  // Desktop: ulangi tata letak ProvincePage. Kolom isi maks 1120px, kartu AQI 393x453
+  // di kanan atas, dua panel 605x220 di dasar (jarak 2.2% kolom). Batas provinsi
+  // dipaskan ke kotak kosong di kiri kartu AQI dan di atas panel, jadi seluruh
+  // boundary kelihatan dan ukurannya mengikuti sisa ruang.
+  const COLUMN = 1120
+  const AQI_W = 393
+  const AQI_H = 453
+  const AQI_TOP = 109
+  const NAV_H = 79
+  const BOTTOM_BAR = 50
+  const GAP = 12
+
+  const column = Math.min(viewport.width - 2 * GAP, COLUMN)
+  const gutter = (viewport.width - column) / 2
+  const panelH = column * 0.489 * (220 / 605)
+  const availH = viewport.height - BOTTOM_BAR - panelH - AQI_TOP - GAP
+  // Kartu AQI diskalakan FitBox, jadi lebarnya ikut menyusut kalau tinggi kurang.
+  const aqiScale = Math.min(Math.min(AQI_W, column * (AQI_W / COLUMN)) / AQI_W, availH / AQI_H)
+  const aqiW = AQI_W * Math.max(aqiScale, 0)
+
   return {
-    top: marginTop + 60 * ui + 24,
-    bottom: 140 + marginTop + 16,
-    left: marginX + 60 * ui + 24,
-    right: marginX + 434 * ui + 32,
+    top: NAV_H + GAP,
+    bottom: BOTTOM_BAR + panelH + GAP,
+    left: GAP,
+    right: gutter + aqiW + GAP,
   }
 }
 
