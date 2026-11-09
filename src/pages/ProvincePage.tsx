@@ -60,9 +60,9 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col px-[50px] pb-[50px] pt-[109px]">
       <AppNavbar showBack onBack={goNational} />
-      {/* Info AQI di atas, rata kanan, menyusut mengikuti sisa tinggi. */}
-      <div className="flex min-h-0 flex-1 items-end justify-end pb-3">
-        <FitBox width={393} height={453} align="right" valign="bottom" className="w-[27.3%] min-w-[220px] max-w-[393px] max-h-full">
+      {/* Info AQI menempel di kanan atas, menyusut mengikuti sisa tinggi. */}
+      <div className="flex min-h-0 flex-1 items-start justify-end pt-3">
+        <FitBox width={393} height={453} align="right" valign="top" className="w-[27.3%] min-w-[220px] max-w-[393px] max-h-full">
           <InfoCard {...info} />
         </FitBox>
       </div>

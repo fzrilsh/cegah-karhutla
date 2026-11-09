@@ -56,7 +56,7 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
           <button
             type="button"
             onClick={goLanding}
-            className="cursor-pointer font-logo text-[28px] leading-none text-white md:text-[40px]"
+            className="cursor-pointer whitespace-nowrap font-logo text-[20px] leading-none text-white sm:text-[28px] md:text-[40px]"
           >
             Cegah Karhutla
           </button>
