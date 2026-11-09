@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 
-const MOBILE_QUERY = '(max-width: 1023px)'
+const MOBILE_QUERY = '(max-width: 767px)'
 
-// true jika lebar viewport di bawah 1024px (HP dan tablet)
+// true hanya untuk HP. Tablet tetap memakai layout lebar supaya panel tidak menutup peta.
 export function useMobile() {
   const [isMobile, setIsMobile] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches,

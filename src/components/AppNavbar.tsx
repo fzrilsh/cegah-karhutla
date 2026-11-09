@@ -56,7 +56,7 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
           <button
             type="button"
             onClick={goLanding}
-            className="cursor-pointer whitespace-nowrap font-logo text-[20px] leading-none text-white sm:text-[28px] md:text-[40px]"
+            className="cursor-pointer whitespace-nowrap font-logo text-[20px] leading-none text-white sm:text-[28px] lg:text-[40px]"
           >
             Cegah Karhutla
           </button>
@@ -84,7 +84,7 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
                 className="flex cursor-pointer items-center gap-1 text-white"
                 aria-label="Cari provinsi"
               >
-                <span className="font-nav text-[18px] font-medium">Cari Provinsi</span>
+                <span className="whitespace-nowrap font-nav text-[18px] font-medium">Cari Provinsi</span>
                 <img src={iconSearch} alt="" className="size-6 -translate-y-px" />
               </button>
             )}

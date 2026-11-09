@@ -45,7 +45,7 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
     return (
       <div className="pointer-events-none absolute inset-0 z-20 select-none">
         <AppNavbar showBack onBack={goNational} />
-        <div className="pointer-events-auto absolute inset-x-4 top-[80px] flex flex-col gap-3 pb-4">
+        <div className="pointer-events-auto absolute inset-x-4 bottom-0 top-[80px] flex flex-col gap-3 overflow-y-auto pb-4">
           <InfoCardMobile {...info} />
           <HistoryPanelMobile metrics={metrics} activeIndex={weekIndex} onChange={onWeekChange} />
           <ImpactPanelMobile />
@@ -54,27 +54,41 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
     )
   }
 
-  // Margin 50px sama dengan padding navbar. Setiap widget dibungkus FitBox: isinya
-  // digambar ukuran desain lalu diskalakan mengikuti kotak kontainernya, jadi ukuran
-  // mengikuti sisa ruang, bukan angka viewport.
+  // Kartu AQI 393x453 dan panel 605x220 saat kolom isi 1120px (margin 160px di
+  // desktop 1440). Saat lebar turun margin menyusut dulu sampai 16px, baru semua
+  // widget mengecil bersama lewat FitBox.
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col px-[50px] pb-[50px] pt-[109px]">
-      <AppNavbar showBack onBack={goNational} />
-      {/* Info AQI menempel di kanan atas, menyusut mengikuti sisa tinggi. */}
-      <div className="flex min-h-0 flex-1 items-start justify-end pt-3">
-        <FitBox width={393} height={453} align="right" valign="top" className="w-[27.3%] min-w-[220px] max-w-[393px] max-h-full">
-          <InfoCard {...info} />
-        </FitBox>
+    <div className="pointer-events-none absolute inset-0 z-20">
+      {/* Latar navbar selebar layar, isinya dibatasi kolom 1120px lalu di tengah,
+          jadi tepi isi navbar sejajar tepi panel. */}
+      <div className="md:[&>header]:px-[max(16px,calc((100%-1120px)/2))]">
+        <AppNavbar showBack onBack={goNational} />
       </div>
 
-      {/* Histori dan luas area terbakar satu baris, jadi tingginya selalu sama. */}
-      <div className="flex shrink-0 justify-between gap-[2.2%]">
-        <FitBox width={605} height={220} className="w-[42%] max-w-[605px]">
-          <HistoryPanel metrics={metrics} activeIndex={weekIndex} onChange={onWeekChange} />
-        </FitBox>
-        <FitBox width={605} height={220} className="w-[42%] max-w-[605px]">
-          <ImpactPanel />
-        </FitBox>
+      {/* Kolom isi dikunci 1120px lalu di tengah, jadi margin kanan kiri 160px di
+          desktop 1440 dan cuma margin itu yang berubah. Di bawah 1152px margin
+          mentok 16px, panel ikut sempit. */}
+      <div className="flex h-full flex-col px-4 pb-[50px] pt-[109px]">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1120px] flex-1 flex-col">
+          {/* Info AQI menempel di kanan atas, menyusut mengikuti sisa tinggi. */}
+          <div className="flex min-h-0 flex-1 items-start justify-end pb-3">
+            {/* Lebar 35.07% kolom = 393px saat kolom 1120px, dan ikut menyusut
+                sebanding panel bawah begitu kolom lebih sempit. */}
+            <FitBox width={393} height={453} align="right" valign="top" className="w-[35.07%] max-w-[393px] max-h-full">
+              <InfoCard {...info} />
+            </FitBox>
+          </div>
+
+          {/* Histori dan luas area terbakar satu baris, lebarnya berhenti di ukuran desain. */}
+          <div className="flex shrink-0 gap-[2.2%]">
+            <FitBox width={605} height={220} className="flex-1">
+              <HistoryPanel metrics={metrics} activeIndex={weekIndex} onChange={onWeekChange} />
+            </FitBox>
+            <FitBox width={605} height={220} className="flex-1">
+              <ImpactPanel />
+            </FitBox>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -320,7 +334,7 @@ function ImpactPanel() {
 
 function InfoCardMobile({ line1, line2, date, aqi, category }: InfoCardData) {
   return (
-    <section className="relative h-[380px] w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
+    <section className="relative h-[380px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
       <h1 className="absolute inset-x-0 top-[20px] text-center font-heading text-[26px] font-semibold leading-[32px] tracking-[-0.72px]">
         {line1}
         <br />
@@ -366,7 +380,7 @@ function HistoryPanelMobile({ metrics, activeIndex, onChange }: HistoryPanelProp
   const max = Math.max(...values, 1)
 
   return (
-    <section className="relative h-[170px] w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
+    <section className="relative h-[170px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
       <h2 className="font-nav text-[14px] font-medium text-gray-500">Histori Area Api</h2>
       <div className="mt-3 flex h-[70px] items-end gap-1">
         {values.map((value, index) => (
@@ -389,7 +403,7 @@ function HistoryPanelMobile({ metrics, activeIndex, onChange }: HistoryPanelProp
 
 function ImpactPanelMobile() {
   return (
-    <section className="relative w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
+    <section className="relative w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
       <div className="grid grid-cols-2 gap-3">
         <div>
           <h2 className="font-nav text-[14px] font-medium text-gray-500">Luas Area Terbakar</h2>
