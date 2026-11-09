@@ -53,10 +53,16 @@ export function AppNavbar({ showBack = false, onBack }: AppNavbarProps) {
               <img src={iconArrowBack} alt="" className="size-6 rotate-90 invert md:size-8" />
             </button>
           )}
+          {/* Logo ikut tombol kembali, bukan langsung ke landing, supaya klik meleset
+              dari panah tidak melempar user ke halaman awal. Di landing tidak ada
+              tujuan kembali, jadi logo tidak bisa diklik. */}
           <button
             type="button"
-            onClick={goLanding}
-            className="cursor-pointer whitespace-nowrap font-logo text-[20px] leading-none text-white sm:text-[28px] lg:text-[40px]"
+            onClick={showBack ? (onBack ?? goLanding) : undefined}
+            disabled={!showBack}
+            className={`whitespace-nowrap font-logo text-[20px] leading-none text-white sm:text-[28px] lg:text-[40px] ${
+              showBack ? 'cursor-pointer' : 'cursor-default'
+            }`}
           >
             Cegah Karhutla
           </button>
