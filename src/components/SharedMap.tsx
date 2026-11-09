@@ -457,6 +457,23 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
     if (map.getLayer(FILL_LAYER)) map.moveLayer(HEAT_LAYER, FILL_LAYER)
   }, [isLoaded, camera])
 
+  // Di halaman detail provinsi peta dikunci supaya fokus ke satu provinsi.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+    const locked = camera.kind === 'province'
+    const handlers = [
+      map.dragPan,
+      map.scrollZoom,
+      map.doubleClickZoom,
+      map.touchZoomRotate,
+      map.dragRotate,
+      map.boxZoom,
+      map.keyboard,
+    ]
+    handlers.forEach((handler) => (locked ? handler.disable() : handler.enable()))
+  }, [isLoaded, camera.kind])
+
   // Framing kamera mengikuti route
   useEffect(() => {
     const map = mapRef.current
