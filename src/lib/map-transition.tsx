@@ -9,18 +9,22 @@ import { useLocation, useNavigate } from 'react-router'
 
 export type MapCameraState =
   | { readonly kind: 'landing' }
+  | { readonly kind: 'national' }
   | { readonly kind: 'province'; readonly slug: string }
 
 interface MapTransitionApi {
   readonly camera: MapCameraState
   readonly enterProvince: (slug: string) => void
+  readonly goNational: () => void
   readonly goLanding: () => void
+  readonly goProvince: (slug: string) => void
 }
 
 const MapTransitionContext = createContext<MapTransitionApi | null>(null)
 
 // Kamera derive dari route supaya transisi dan URL selalu sinkron (deep-link tetap jalan)
 function cameraFromPath(pathname: string): MapCameraState {
+  if (pathname === '/peta') return { kind: 'national' }
   if (pathname.startsWith('/provinsi/')) {
     const slug = pathname.split('/')[2]
     if (slug) return { kind: 'province', slug }
@@ -40,13 +44,24 @@ export function MapTransitionProvider({ children }: { children: ReactNode }) {
     [navigate],
   )
 
+  const goNational = useCallback(() => {
+    navigate('/peta')
+  }, [navigate])
+
   const goLanding = useCallback(() => {
     navigate('/')
   }, [navigate])
 
+  const goProvince = useCallback(
+    (slug: string) => {
+      navigate(`/provinsi/${slug}`)
+    },
+    [navigate],
+  )
+
   const api = useMemo(
-    () => ({ camera, enterProvince, goLanding }),
-    [camera, enterProvince, goLanding],
+    () => ({ camera, enterProvince, goNational, goLanding, goProvince }),
+    [camera, enterProvince, goNational, goLanding, goProvince],
   )
 
   return (

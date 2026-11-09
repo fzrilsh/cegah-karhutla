@@ -1,34 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
 import type maplibregl from 'maplibre-gl'
 import { useMapTransition } from '@/lib/map-transition'
-import { provinceMetas, ALL_PROVINCES_BOUNDS } from '@/data/provinces-meta'
-import { provinceFirePoints } from '@/data/fire-points'
-import { DEFAULT_WEEK_INDEX } from '@/data/kalbar-weekly-metrics'
+import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/provinces-meta'
 import provincesGeo from '@/data/provinces-geo.json'
+import heatCells from '@/data/heat-cells.json'
+import { basemapStyle } from '@/lib/basemap-style'
 import markerRing from '@/assets/map/marker-ring.svg'
 import markerCore from '@/assets/map/marker-core.svg'
-
-const BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
 const FILL_LAYER = 'province-fill'
 const FILL_HOVER_LAYER = 'province-fill-hover'
 const BORDER_LAYER = 'province-border'
-const FIRE_LAYER = 'fire-points'
+const HEAT_LAYER = 'fire-heat'
 const SOURCE_PROVINCES = 'provinces'
-const SOURCE_FIRE = 'fire-points'
+const SOURCE_HEAT = 'fire-heat'
+
+// Titik api FIRMS yang sudah diagregasi per sel 0,02 derajat (lihat heat-cells.json).
+const heatGeo = {
+  type: 'FeatureCollection',
+  features: (heatCells as { cells: number[][] }).cells.map(([lng, lat, count]) => ({
+    type: 'Feature',
+    properties: { count },
+    geometry: { type: 'Point', coordinates: [lng, lat] },
+  })),
+} as GeoJSON.FeatureCollection
+
+const MAX_HEAT = (heatCells as { cells: number[][] }).cells.reduce(
+  (max, cell) => Math.max(max, cell[2]),
+  1,
+)
+
+const boundsToLngLat = (b: readonly [number, number, number, number]) => [
+  [b[0], b[1]],
+  [b[2], b[3]],
+] as [[number, number], [number, number]]
 
 interface SharedMapProps {
   readonly isMobile: boolean
   readonly activeProvinceSlug?: string
-  readonly mode?: 'fire' | 'smoke'
-  readonly weekIndex?: number
 }
 
-function getFitPadding(isMobile: boolean, kind: 'landing' | 'province', viewport: { width: number; height: number }) {
+function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'province', viewport: { width: number; height: number }) {
   if (kind === 'landing') {
     return isMobile
       ? { top: 140, bottom: 90, left: 16, right: 16 }
       : { top: 40, bottom: 40, left: 40, right: 40 }
+  }
+  if (kind === 'national') {
+    // Ruang untuk navbar atas dan tombol aksi bawah
+    return isMobile
+      ? { top: 110, bottom: 100, left: 20, right: 20 }
+      : { top: 90, bottom: 110, left: 60, right: 60 }
   }
   if (isMobile) {
     return { top: 140, bottom: 270, left: 16, right: 16 }
@@ -45,7 +67,7 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'province', viewport
   }
 }
 
-export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekIndex = DEFAULT_WEEK_INDEX }: SharedMapProps) {
+export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
   const { camera, enterProvince } = useMapTransition()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -59,18 +81,22 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   const cameraRef = useRef(camera)
   const enterProvinceRef = useRef(enterProvince)
   const prevCameraRef = useRef(camera)
+  const isMobileRef = useRef(isMobile)
+  const viewportRef = useRef(viewport)
   useEffect(() => { cameraRef.current = camera }, [camera])
   useEffect(() => { enterProvinceRef.current = enterProvince }, [enterProvince])
+  useEffect(() => { isMobileRef.current = isMobile }, [isMobile])
+  useEffect(() => { viewportRef.current = viewport }, [viewport])
 
   // Posisi kamera landing disimpan di localStorage supaya kembali ke tempat semula
   // setelah keluar dari halaman detail (sama seperti implementasi peta lama)
   const LANDING_CAM_KEY = 'ck-landing-camera'
 
-  const readLandingCamera = (): { center: [number, number]; zoom: number } | null => {
+  const readLandingCamera = (): { kind: string; center: [number, number]; zoom: number } | null => {
     try {
       const raw = localStorage.getItem(LANDING_CAM_KEY)
       if (!raw) return null
-      const parsed = JSON.parse(raw) as { center?: [number, number]; zoom?: number }
+      const parsed = JSON.parse(raw) as { kind?: string; center?: [number, number]; zoom?: number }
       if (
         !Array.isArray(parsed.center) ||
         parsed.center.length !== 2 ||
@@ -80,7 +106,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
       ) {
         return null
       }
-      return { center: [parsed.center[0], parsed.center[1]], zoom: parsed.zoom }
+      return { kind: parsed.kind ?? 'landing', center: [parsed.center[0], parsed.center[1]], zoom: parsed.zoom }
     } catch {
       return null
     }
@@ -91,6 +117,21 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     if (!containerRef.current) return
     let cancelled = false
     let map: maplibregl.Map | null = null
+    const zoomIn = () => map?.zoomIn()
+    const zoomOut = () => map?.zoomOut()
+    const recenter = () => {
+      const national = cameraRef.current.kind === 'national'
+      map?.fitBounds(
+        boundsToLngLat(national ? INDONESIA_BOUNDS : LANDING_BOUNDS),
+        {
+          padding: getFitPadding(isMobileRef.current, national ? 'national' : 'landing', viewportRef.current),
+          duration: 750,
+        },
+      )
+    }
+    window.addEventListener('map-zoom-in', zoomIn)
+    window.addEventListener('map-zoom-out', zoomOut)
+    window.addEventListener('map-recenter', recenter)
 
     const init = async () => {
       const [module] = await Promise.all([
@@ -103,16 +144,16 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
 
       map = new ml.Map({
         container: containerRef.current,
-        style: BASEMAP_STYLE,
+        style: basemapStyle,
         center: [112, -0.5],
         zoom: 4.5,
-        minZoom: 3.5,
+        // Portrait sempit butuh zoom ~2,4 untuk memuat seluruh Indonesia
+        minZoom: 2,
         maxZoom: 12,
         attributionControl: false,
       })
 
       map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-left')
-
       const geoData = provincesGeo as GeoJSON.FeatureCollection
 
       map.on('load', () => {
@@ -125,13 +166,13 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           promoteId: 'slug',
         })
 
-        // Fill dasar semua provinsi (tipis, warna netral di peta gelap)
+        // Fill dasar semua provinsi (tipis, di atas peta hijau)
         map.addLayer({
           id: FILL_LAYER,
           type: 'fill',
           source: SOURCE_PROVINCES,
           paint: {
-            'fill-color': '#a8bfff',
+            'fill-color': '#9df0a8',
             'fill-opacity': 0.06,
           },
         })
@@ -142,33 +183,32 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
           type: 'fill',
           source: SOURCE_PROVINCES,
           paint: {
-            'fill-color': '#d9e1ff',
+            'fill-color': '#9df0a8',
             'fill-opacity': [
               'case',
               ['boolean', ['feature-state', 'hover'], false],
-              0.28,
+              0.18,
               ['boolean', ['feature-state', 'active'], false],
-              0.38,
+              0.26,
               0,
             ],
           },
         })
 
-        // Border provinsi
         map.addLayer({
           id: BORDER_LAYER,
           type: 'line',
           source: SOURCE_PROVINCES,
           paint: {
-            'line-color': '#a8bfff',
+            'line-color': '#8fe3a0',
             'line-width': 1.5,
-            'line-opacity': 0.55,
+            'line-opacity': 0.7,
           },
         })
 
         // Interaksi hover dan click pada layer teratas (hover layer menutupi fill dasar)
         map.on('mousemove', FILL_HOVER_LAYER, (e) => {
-          if (!map || cameraRef.current.kind !== 'landing') return
+          if (!map || (cameraRef.current.kind !== 'landing' && cameraRef.current.kind !== 'national')) return
           const feature = e.features?.[0]
           const slug = feature?.properties?.slug as string | undefined
           if (slug === hoveredRef.current) return
@@ -194,7 +234,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         })
 
         map.on('click', FILL_HOVER_LAYER, (e) => {
-          if (cameraRef.current.kind !== 'landing') return
+          if (cameraRef.current.kind !== 'landing' && cameraRef.current.kind !== 'national') return
           const slug = e.features?.[0]?.properties?.slug as string | undefined
           if (slug) enterProvinceRef.current(slug)
         })
@@ -219,6 +259,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
       observer.disconnect()
       markers.forEach((marker) => marker.remove())
       markers.clear()
+      window.removeEventListener('map-zoom-in', zoomIn)
+      window.removeEventListener('map-zoom-out', zoomOut)
+      window.removeEventListener('map-recenter', recenter)
       if (map) {
         map.remove()
         map = null
@@ -228,13 +271,15 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Marker provinsi (hanya di landing), pakai maplibre Marker dengan elemen HTML kustom
+  // Bubble nama provinsi di landing dan /peta, desain Figma node 291:20082.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
 
-    const showMarkers = camera.kind === 'landing'
-    const baseScale = isMobile ? 0.82 : 1
+    const showMarkers = camera.kind === 'landing' || camera.kind === 'national'
+    // Bubble digambar 105px (frame Figma) lalu dikecilkan; teks tetap ukuran tetap
+    // supaya nama provinsi masih terbaca saat semua provinsi tampil.
+    const baseScale = isMobile ? 0.45 : 0.62
 
     provinceMetas.forEach((meta) => {
       let marker = markersRef.current.get(meta.slug)
@@ -252,12 +297,12 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         el.type = 'button'
         el.className = 'province-map-marker'
         el.setAttribute('aria-label', `Buka data ${meta.name}`)
-        // Elemen luar polos: MapLibre mengelola position (absolute lewat class
-        // maplibregl-marker) dan style.transform untuk positioning, jadi jangan
-        // menimpa keduanya. Hover scale ditaruh di elemen visual di dalamnya.
+        // Elemen luar polos: MapLibre mengelola position dan transform untuk
+        // positioning, jadi hover scale ditaruh di elemen visual di dalamnya.
+        // Ukuran 105px sama dengan frame Figma (outer ellipse 105px, inner 81.5px).
         el.style.cssText = `
-          width: 99px;
-          height: 99px;
+          width: 105px;
+          height: 105px;
           cursor: pointer;
           background: none;
           border: none;
@@ -278,42 +323,37 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         const ring = document.createElement('img')
         ring.src = markerRing
         ring.alt = ''
-        ring.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
+        ring.style.cssText =
+          'position:absolute;inset:0;width:105px;height:105px;transform:rotate(180deg);'
 
         const core = document.createElement('img')
         core.src = markerCore
         core.alt = ''
-        core.style.cssText = 'position:absolute;inset:10px;width:79px;height:79px;'
+        core.style.cssText = 'position:absolute;inset:11.75px;width:81.5px;height:81.5px;'
 
+        visual.appendChild(ring)
+        visual.appendChild(core)
+        el.appendChild(visual)
+
+        // Label tidak ikut diskalakan bersama bubble supaya tetap terbaca.
         const label = document.createElement('div')
         label.style.cssText = `
           position:absolute;
           inset:0;
           display:flex;
-          flex-direction:column;
           align-items:center;
           justify-content:center;
-          font-family:var(--font-display);
-          font-size:12px;
-          line-height:14px;
-          color:var(--color-map-label);
+          padding:0 6px;
+          font-family:var(--font-nav);
+          font-weight:700;
+          font-size:${isMobile ? 8 : 9}px;
+          line-height:${isMobile ? 9 : 10}px;
+          color:#ffffff;
           text-align:center;
+          word-break:break-word;
         `
-        const p1 = document.createElement('p')
-        p1.textContent = meta.line1
-        p1.style.margin = '0'
-        label.appendChild(p1)
-        if (meta.line2) {
-          const p2 = document.createElement('p')
-          p2.textContent = meta.line2
-          p2.style.margin = '0'
-          label.appendChild(p2)
-        }
-
-        visual.appendChild(ring)
-        visual.appendChild(core)
-        visual.appendChild(label)
-        el.appendChild(visual)
+        label.textContent = meta.name
+        el.appendChild(label)
 
         el.addEventListener('mouseenter', () => {
           visual.style.transform = `scale(${baseScale * 1.111})`
@@ -372,83 +412,82 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
     })
   }, [isLoaded, camera, activeProvinceSlug])
 
-  // Titik api: GeoJSON circle layer
+  // Titik api: heatmap dari sel FIRMS yang sudah diagregasi.
+  // Tampil di /peta dan halaman detail provinsi.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
 
-    const showFire = camera.kind === 'province' && mode === 'fire' && camera.slug in provinceFirePoints
+    // Di halaman detail, heatmap hanya untuk provinsi yang punya data.
+    // shortcut: snapshot FIRMS hanya mencakup Kalimantan dan sebagian Sumatera, cakupan penuh perlu pull ulang.
+    const showHeat = camera.kind === 'national' || camera.kind === 'province'
 
-    // Bersihkan layer lama
-    if (map.getLayer(FIRE_LAYER)) map.removeLayer(FIRE_LAYER)
-    if (map.getSource(SOURCE_FIRE)) map.removeSource(SOURCE_FIRE)
+    if (map.getLayer(HEAT_LAYER)) map.removeLayer(HEAT_LAYER)
+    if (map.getSource(SOURCE_HEAT)) map.removeSource(SOURCE_HEAT)
 
-    if (!showFire) return
+    if (!showHeat) return
 
-    const slugWeeks = provinceFirePoints[camera.slug]
-    const points = slugWeeks?.[weekIndex] ?? slugWeeks?.[DEFAULT_WEEK_INDEX] ?? []
-
-    if (points.length === 0) return
-
-    const geojson: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: points.map(([lng, lat]) => ({
-        type: 'Feature',
-        properties: {},
-        geometry: { type: 'Point', coordinates: [lng, lat] },
-      })),
-    }
-
-    map.addSource(SOURCE_FIRE, { type: 'geojson', data: geojson })
+    map.addSource(SOURCE_HEAT, { type: 'geojson', data: heatGeo })
 
     map.addLayer({
-      id: FIRE_LAYER,
-      type: 'circle',
-      source: SOURCE_FIRE,
+      id: HEAT_LAYER,
+      type: 'heatmap',
+      source: SOURCE_HEAT,
+      maxzoom: 11,
       paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          4, 6,
-          8, 14,
-          12, 22,
+        // Bobot dari jumlah deteksi per sel, dinormalisasi ke nilai maksimum.
+        'heatmap-weight': ['/', ['get', 'count'], MAX_HEAT],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 5, 1.2, 8, 2],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 3, 18, 5, 30, 8, 45],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.85, 9, 0.85, 11, 0],
+        // Gradasi hijau ke merah seperti desain.
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0, 'rgba(40,101,63,0)',
+          0.2, '#28653f',
+          0.45, '#8d8225',
+          0.65, '#b8751b',
+          0.85, '#c22a09',
+          1, '#c22a09',
         ],
-        'circle-color': '#e30000',
-        'circle-opacity': 0.85,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-opacity': 0.6,
       },
     })
-  }, [isLoaded, camera, mode, weekIndex])
+
+    // Heatmap di bawah garis batas dan fill provinsi supaya batas tetap terbaca.
+    if (map.getLayer(FILL_LAYER)) map.moveLayer(HEAT_LAYER, FILL_LAYER)
+  }, [isLoaded, camera])
 
   // Framing kamera mengikuti route
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
 
-    const padding = getFitPadding(isMobile, camera.kind, viewport)
+    const padding = getFitPadding(
+      isMobile,
+      camera.kind === 'province' ? 'province' : camera.kind === 'national' ? 'national' : 'landing',
+      viewport,
+    )
 
-    // Simpan kamera landing tepat sebelum masuk halaman detail
+    // Simpan kamera peta tepat sebelum masuk halaman detail (dari landing atau /peta)
     const prevCam = prevCameraRef.current
     prevCameraRef.current = camera
-    if (prevCam.kind === 'landing' && camera.kind === 'province') {
+    if (prevCam.kind !== 'province' && camera.kind === 'province') {
       try {
         const c = map.getCenter()
         localStorage.setItem(
           LANDING_CAM_KEY,
-          JSON.stringify({ center: [c.lng, c.lat], zoom: map.getZoom() }),
+          JSON.stringify({ kind: prevCam.kind, center: [c.lng, c.lat], zoom: map.getZoom() }),
         )
       } catch {
         // abaikan kegagalan storage
       }
     }
 
-    if (camera.kind === 'landing') {
-      // Saat kembali ke landing, pulihkan kamera tersimpan bila ada
+    if (camera.kind === 'landing' || camera.kind === 'national') {
+      // Saat kembali dari detail, pulihkan kamera persis sebelum provinsi diklik.
+      // Hanya dipulihkan kalau halaman asalnya sama, supaya /peta tetap zoom out penuh.
       const saved = prevCam.kind === 'province' ? readLandingCamera() : null
-      if (saved) {
+      if (saved && saved.kind === camera.kind) {
         map.easeTo({
           center: saved.center,
           zoom: saved.zoom,
@@ -458,10 +497,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
         return
       }
       map.fitBounds(
-        [
-          [ALL_PROVINCES_BOUNDS[0], ALL_PROVINCES_BOUNDS[1]],
-          [ALL_PROVINCES_BOUNDS[2], ALL_PROVINCES_BOUNDS[3]],
-        ],
+        boundsToLngLat(camera.kind === 'national' ? INDONESIA_BOUNDS : LANDING_BOUNDS),
         { padding, duration: 750, essential: true },
       )
       return
@@ -482,7 +518,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, mode = 'fire', weekInd
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 size-full"
+      className="absolute inset-0 z-10 size-full"
       style={{ background: 'var(--color-stage)' }}
     />
   )

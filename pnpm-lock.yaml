@@ -11,7 +11,16 @@ importers:
       '@fontsource-variable/dm-sans':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource-variable/host-grotesk':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/averia-libre':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/cal-sans':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/poppins':
         specifier: 5.3.0
         version: 5.3.0
       clsx:
@@ -72,8 +81,17 @@ packages:
   '@fontsource-variable/dm-sans@5.3.0':
     resolution: {integrity: sha512-BpUG5bqePiDFMBM4ZtLSlPdAIOM990uB1dlXzIf4aw21yQR7BmykedLXXXMqGWsR18aMLOsbWccwJNh3ztTQaA==}
 
+  '@fontsource-variable/host-grotesk@5.3.0':
+    resolution: {integrity: sha512-WvdqilphrdjYLeCHXny9gkdpIZgzyeHpgRWB8T4LSKs5nVnCs6pYYeCeMiRshxcuB6djqL6CSdF1Hq0BvMNCwA==}
+
+  '@fontsource/averia-libre@5.3.0':
+    resolution: {integrity: sha512-A5CjNXcnkNYAkGICcQ8hgjhMudbaZvvPTE2V6plX3Kkwpc0lx7Ye1JaQX+ue1BVQlFfR5kITBQwAyOJ+k8YaaA==}
+
   '@fontsource/cal-sans@5.3.0':
     resolution: {integrity: sha512-XKLenekRFhBqlHyWfGu/5Lz4hmFGIJUvINKW2UgEnmYMj1YL5Vg9PsMGJpGyo0fmUvvewEnZfgPHJEcweNeR5g==}
+
+  '@fontsource/poppins@5.3.0':
+    resolution: {integrity: sha512-cms1nM7U6SN8epIV1WMVOV8VsA645aSm3wHfzIQnkk188U341ThbJGSl2Sv54V29gnDbT2arMPfLzvVIIVCceQ==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1005,7 +1023,13 @@ snapshots:
 
   '@fontsource-variable/dm-sans@5.3.0': {}
 
+  '@fontsource-variable/host-grotesk@5.3.0': {}
+
+  '@fontsource/averia-libre@5.3.0': {}
+
   '@fontsource/cal-sans@5.3.0': {}
+
+  '@fontsource/poppins@5.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

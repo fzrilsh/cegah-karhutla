@@ -6,9 +6,10 @@ import searchIcon from '@/assets/icons/search.svg'
 interface SearchProps {
   readonly currentProvinceSlug?: string
   readonly className?: string
+  readonly compact?: boolean
 }
 
-export function Search({ currentProvinceSlug, className }: SearchProps) {
+export function Search({ currentProvinceSlug, className, compact = false }: SearchProps) {
   const { enterProvince } = useMapTransition()
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -38,7 +39,7 @@ export function Search({ currentProvinceSlug, className }: SearchProps) {
 
   return (
     <div ref={containerRef} className={`relative ${isOpen ? 'z-50' : 'z-30'} ${className ?? ''}`}>
-      <div className="flex h-[60px] w-[434px] items-center justify-between rounded-[10px] border border-navy-700 bg-linear-to-r from-navy-800 to-navy-700 px-[30px] shadow-glow">
+      <div className={`flex items-center justify-between rounded-[10px] border border-navy-700 bg-linear-to-r from-navy-800 to-navy-700 shadow-glow ${compact ? 'h-[42px] w-[230px] px-4' : 'h-[60px] w-[434px] px-[30px]'}`}>
         <input
           type="text"
           value={isOpen ? query : query || (activeProvince ? activeProvince.name : '')}
@@ -50,7 +51,7 @@ export function Search({ currentProvinceSlug, className }: SearchProps) {
             setIsOpen(true)
           }}
           placeholder="Cari Provinsi..."
-          className="w-full bg-transparent font-display text-[20px] text-paper placeholder:text-paper placeholder:opacity-30 focus:outline-none"
+          className={`w-full bg-transparent font-display text-paper placeholder:text-paper placeholder:opacity-30 focus:outline-none ${compact ? 'text-[15px]' : 'text-[20px]'}`}
         />
         <img src={searchIcon} alt="" className="size-[32px] shrink-0 opacity-80" />
       </div>

@@ -2,8 +2,11 @@
 
 /* Token diambil dari variabel Figma (lihat docs/DESIGN-SYSTEM.md) */
 @theme {
-  --font-display: 'Cal Sans', 'DM Sans Variable', system-ui, sans-serif;
+  --font-display: 'Cal Sans', 'Poppins', system-ui, sans-serif;
   --font-sans: 'DM Sans Variable', system-ui, sans-serif;
+  --font-heading: 'Poppins', system-ui, sans-serif;
+  --font-nav: 'Host Grotesk Variable', system-ui, sans-serif;
+  --font-logo: 'Averia Libre', system-ui, serif;
 
   --color-ink: #1d1d1d;
   --color-paper: #f0f0f0;
@@ -16,7 +19,7 @@
   --color-line: #6e86d7;
   --color-line-soft: #8aa3d0;
 
-  --color-stage: #1a2332;
+  --color-stage: #1b7082;
   --color-hover-blue: #ced7e3;
   --color-map-label: #3f3f3f;
   --color-map-highlight: #d9e1ff;
@@ -26,9 +29,18 @@
   --color-on-danger: #f1f1f1;
   --color-fire: #e30000;
 
+  /* Token hijau desain baru */
+  --color-green-600: #1d7d32;
+  --color-green-500: #3aa852;
+  --color-green-200: #dfffe6;
+  --color-green-900: #061309;
+  --color-orange-500: #ff8400;
+  --color-gray-500: #909090;
+
   --shadow-glow: 0 15px 18px -5px rgb(22 37 56 / 0.5);
   --shadow-drop: 0 7px 7.5px rgb(0 0 0 / 0.11);
   --drop-shadow-search: 0 15px 9px rgb(22 37 56 / 0.5);
+  --shadow-card: 0 20px 20px rgb(0 0 0 / 0.1);
 }
 
 @layer base {
@@ -39,9 +51,7 @@
   }
 
   body {
-    @apply bg-navy-900 font-sans text-paper antialiased;
-    /* Pinch trackpad diarahkan ke peta, bukan zoom halaman */
-    touch-action: none;
+    @apply bg-green-900 font-sans text-paper antialiased;
     overscroll-behavior: none;
   }
 }

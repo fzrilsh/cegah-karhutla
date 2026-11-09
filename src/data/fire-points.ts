@@ -1,9 +1,6 @@
-// Titik api dummy dalam koordinat lat/lng (WGS84), 7 minggu (13 Sep sampai 25 Okt 2026).
-// Tiap titik berupa [lng, lat, mingguAwal, mingguAkhir] (indeks minggu, inklusif), jadi titik
-// bisa muncul dan padam di antara minggu. Jumlah titik aktif per minggu sama dengan mapDotsCount.
-// Kalimantan Barat dikonversi dari koordinat peta 4096x1365 (selaras Figma). Provinsi lain
-// digenerate acak berbenih di dalam batas provinsi, mengikuti kurva hotspotCount.
-// TODO: setelah FDS, ganti dengan data FIRMS NASA (MODIS/VIIRS active fire).
+// Fallback titik api dummy untuk tampilan lama. Snapshot FIRMS nyata diproses melalui
+// scripts/fetch-firms.ts dan disimpan di firms-hotspots.json. Jangan pakai fallback ini
+// sebagai angka statistik atau klaim lokasi kebakaran nyata.
 export type LngLatPoint = readonly [lng: number, lat: number]
 type FireSpan = readonly [lng: number, lat: number, firstWeek: number, lastWeek: number]
 

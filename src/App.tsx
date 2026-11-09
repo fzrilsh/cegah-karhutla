@@ -1,56 +1,70 @@
 import { useState } from 'react'
 import { BrowserRouter, useLocation } from 'react-router'
-import { LazyMotion, MotionConfig, AnimatePresence, domAnimation, m } from 'motion/react'
+import { LazyMotion, MotionConfig, domAnimation, m } from 'motion/react'
 import { LandingPage } from '@/pages/LandingPage'
+import { NationalMapPage } from '@/pages/NationalMapPage'
 import { ProvincePage } from '@/pages/ProvincePage'
 import { SharedMap } from '@/components/SharedMap'
 import { MapTransitionProvider } from '@/lib/map-transition'
 import { useMobile } from '@/hooks/use-mobile'
 import { DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
 
-interface PageOverlayProps {
+// Semua overlay route wajib z-20, SharedMap memakai z-10.
+function LandingOverlay() {
+  return (
+    <div className="absolute inset-0 z-20">
+      <LandingPage />
+    </div>
+  )
+}
+
+function NationalOverlay() {
+  return (
+    // pointer-events-none wajib: wrapper ini menutupi peta, tanpa ini drag peta mati.
+    <div className="pointer-events-none absolute inset-0 z-20">
+      <NationalMapPage />
+    </div>
+  )
+}
+
+// Overlay detail provinsi: kartu info, slider, dll
+interface ProvinceOverlayProps {
   readonly weekIndex: number
   readonly onWeekChange: (index: number) => void
 }
 
-// Overlay halaman yang crossfade di atas peta bersama
-function PageOverlay({ weekIndex, onWeekChange }: PageOverlayProps) {
+function ProvinceOverlay({ weekIndex, onWeekChange }: ProvinceOverlayProps) {
   const location = useLocation()
   const displayedLocation = location
 
-  const isLanding = displayedLocation.pathname === '/'
   const slug = displayedLocation.pathname.startsWith('/provinsi/')
     ? displayedLocation.pathname.split('/')[2]
     : undefined
 
+  // Fade masuk bersamaan dengan terbangnya kamera (750ms di SharedMap).
+  // Sengaja tanpa AnimatePresence: exit bertahap membuat transisi terasa pindah halaman.
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <m.div
-        key={displayedLocation.pathname}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.28, ease: 'easeOut' }}
-        className="pointer-events-none absolute inset-0 z-20"
-      >
-        {isLanding ? (
-          <LandingPage key="landing" />
-        ) : (
-          <ProvincePage
-            key={slug ?? 'province'}
-            slug={slug}
-            weekIndex={weekIndex}
-            onWeekChange={onWeekChange}
-          />
-        )}
-      </m.div>
-    </AnimatePresence>
+    <m.div
+      key={displayedLocation.pathname}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.55, ease: [0.25, 0.1, 0.25, 1] }}
+      className="pointer-events-none absolute inset-0 z-20"
+    >
+      <ProvincePage
+        slug={slug}
+        weekIndex={weekIndex}
+        onWeekChange={onWeekChange}
+      />
+    </m.div>
   )
 }
 
 function Root() {
   const isMobile = useMobile()
   const location = useLocation()
+  const isLanding = location.pathname === '/'
+  const isNational = location.pathname === '/peta'
   const slug = location.pathname.startsWith('/provinsi/')
     ? location.pathname.split('/')[2]
     : undefined
@@ -64,8 +78,12 @@ function Root() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-stage select-none">
-      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} weekIndex={weekIndex} />
-      <PageOverlay weekIndex={weekIndex} onWeekChange={handleWeekChange} />
+      {/* SharedMap selalu di-mount sekali, persist camera state antar route */}
+      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} />
+      {/* Overlay berubah sesuai route, peta tetap */}
+      {isLanding && <LandingOverlay />}
+      {isNational && <NationalOverlay />}
+      {slug && <ProvinceOverlay weekIndex={weekIndex} onWeekChange={handleWeekChange} />}
     </div>
   )
 }
