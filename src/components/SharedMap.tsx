@@ -5,7 +5,9 @@ import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/province
 import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
 import { fetchFirmsHeat, readFirmsHeatCache } from '@/lib/firms'
+import { fetchOpenMeteoSnapshot, readOpenMeteoCache, type ProvinceWeather } from '@/lib/open-meteo'
 import { basemapStyle } from '@/lib/basemap-style'
+import { WindSmokeLayer } from '@/components/WindSmokeLayer'
 import markerRing from '@/assets/map/marker-ring.svg'
 import markerCore from '@/assets/map/marker-core.svg'
 
@@ -100,6 +102,10 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
   // Sel heatmap aktif: cache runtime kalau ada, kalau tidak snapshot bundle.
   const [heat, setHeat] = useState<HeatCells>(
     () => readFirmsHeatCache()?.cells ?? SNAPSHOT_CELLS,
+  )
+  // Sampel angin per provinsi, dipakai bersama oleh partikel angin dan asap.
+  const [weather, setWeather] = useState<readonly ProvinceWeather[]>(
+    () => readOpenMeteoCache()?.weather ?? [],
   )
 
   // Ref untuk nilai yang dipakai di event handler peta (didaftarkan sekali saat init)
@@ -453,6 +459,17 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
     return () => controller.abort()
   }, [])
 
+  // Ambil sampel angin/udara sekali per sesi, cache 15 menit di lib/open-meteo.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchOpenMeteoSnapshot({ signal: controller.signal })
+      .then((snapshot) => setWeather(snapshot.weather))
+      .catch(() => {
+        // Gagal fetch: tetap pakai cache lama. Tanpa angin lapisan asap tidak digambar.
+      })
+    return () => controller.abort()
+  }, [])
+
   // Titik api: heatmap dari sel FIRMS yang sudah diagregasi.
   // Tampil di /peta dan halaman detail provinsi.
   useEffect(() => {
@@ -571,11 +588,24 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
     )
   }, [isLoaded, camera, isMobile, viewport])
 
+  // Arah angin dan sebaran asap hanya relevan di peta, bukan landing.
+  const showWindSmoke =
+    isLoaded && (camera.kind === 'national' || camera.kind === 'province')
+
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 z-10 size-full"
-      style={{ background: 'var(--color-stage)' }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="absolute inset-0 z-10 size-full"
+        style={{ background: 'var(--color-stage)' }}
+      />
+      <WindSmokeLayer
+        map={mapRef.current}
+        weather={weather}
+        cells={heat}
+        enabled={showWindSmoke}
+        isMobile={isMobile}
+      />
+    </>
   )
 }

@@ -100,6 +100,38 @@ export function readOpenMeteoCache(options: Pick<OpenMeteoFetchOptions, 'cacheSt
   })
 }
 
+export interface WindVector {
+  // Komponen angin dalam km/jam, sumbu u ke timur dan v ke utara.
+  readonly u: number
+  readonly v: number
+}
+
+// Sampel angin provinsi terdekat untuk satu titik. Arah yang dipakai adalah
+// smokeDirection (arah angin bergerak), bukan windDirection (arah asal angin).
+export function nearestWind(
+  latitude: number,
+  longitude: number,
+  weather: readonly ProvinceWeather[],
+): WindVector | null {
+  let nearest: ProvinceWeather | null = null
+  let nearestDistance = Infinity
+  for (const sample of weather) {
+    const dLat = sample.latitude - latitude
+    const dLng = sample.longitude - longitude
+    const distance = dLat * dLat + dLng * dLng
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearest = sample
+    }
+  }
+  if (!nearest || nearest.smokeDirection === null || nearest.windSpeed === null) return null
+  const rad = (nearest.smokeDirection * Math.PI) / 180
+  return {
+    u: Math.sin(rad) * nearest.windSpeed,
+    v: Math.cos(rad) * nearest.windSpeed,
+  }
+}
+
 function normalizeWeather(response: OpenMeteoWeatherResponse): ProvinceWeather {
   const windDirection = finiteOrNull(response.current?.wind_direction_10m)
   return {
