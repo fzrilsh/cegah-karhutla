@@ -23,17 +23,21 @@ interface ProvinceFeature {
   readonly geometry: { readonly type: string; readonly coordinates: unknown }
 }
 
+export function featureContainsPoint(feature: ProvinceFeature, lng: number, lat: number): boolean {
+  const polygons =
+    feature.geometry.type === 'Polygon'
+      ? [feature.geometry.coordinates as Polygon]
+      : (feature.geometry.coordinates as readonly Polygon[])
+  return polygons.some((polygon) => inPolygon(polygon, lng, lat))
+}
+
 export function findProvinceNameAt(
   features: readonly ProvinceFeature[],
   lng: number,
   lat: number,
 ): string | undefined {
   for (const feature of features) {
-    const polygons =
-      feature.geometry.type === 'Polygon'
-        ? [feature.geometry.coordinates as Polygon]
-        : (feature.geometry.coordinates as readonly Polygon[])
-    if (polygons.some((polygon) => inPolygon(polygon, lng, lat))) return feature.properties.name
+    if (featureContainsPoint(feature, lng, lat)) return feature.properties.name
   }
   return undefined
 }

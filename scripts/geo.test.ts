@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { findProvinceNameAt, formatCoordinate } from '../src/lib/geo.ts'
+import { featureContainsPoint, findProvinceNameAt, formatCoordinate } from '../src/lib/geo.ts'
 
 const square = (name: string, [minLng, minLat, maxLng, maxLat]: number[]) => ({
   properties: { name },
@@ -20,6 +20,14 @@ test('matches a point inside a province polygon', () => {
 test('returns undefined outside every polygon', () => {
   assert.equal(findProvinceNameAt(features, 105, 5), undefined)
   assert.equal(findProvinceNameAt(features, 110.5, -2), undefined)
+})
+
+test('featureContainsPoint filters heat cells by the province polygon, not its bbox', () => {
+  // Kotak A dan B berbagi bbox 100..120 x -5..0, titik di celah antarkeduanya
+  // ada di bbox tapi bukan di poligon mana pun.
+  assert.equal(featureContainsPoint(features[0], 105, -2), true)
+  assert.equal(featureContainsPoint(features[0], 115, -2), false)
+  assert.equal(featureContainsPoint(features[0], 110.5, -2), false)
 })
 
 test('formats coordinates with LS/BT hemisphere labels', () => {

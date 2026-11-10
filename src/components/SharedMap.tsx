@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type maplibregl from 'maplibre-gl'
 import { useMapTransition } from '@/lib/map-transition'
 import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/provinces-meta'
 import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
 import { loadHeatWeek, type HeatCells } from '@/data/heat-weekly'
+import { featureContainsPoint } from '@/lib/geo'
 import { fetchFirmsHeat, readFirmsHeatCache } from '@/lib/firms'
 import { fetchOpenMeteoSnapshot, readOpenMeteoCache, type ProvinceWeather } from '@/lib/open-meteo'
 import { basemapStyle } from '@/lib/basemap-style'
@@ -347,6 +348,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
         `
 
         const visual = document.createElement('div')
+        // drop-shadow mengikuti siluet bulat aset, bukan kotak elemennya.
         visual.style.cssText = `
           position: absolute;
           inset: 0;
@@ -354,6 +356,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
           transform-origin: center center;
           pointer-events: none;
           transform: scale(${baseScale});
+          filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
         `
 
         const ring = document.createElement('img')
@@ -394,6 +397,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
           color:#ffffff;
           text-align:center;
           overflow-wrap:anywhere;
+          text-shadow:0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.7);
         `
         label.textContent = meta.name
         el.appendChild(label)
@@ -500,7 +504,18 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
   // Titik api: heatmap dari sel FIRMS yang sudah diagregasi.
   // Tampil di /peta dan halaman detail provinsi. Halaman provinsi pakai minggu
   // terpilih, peta nasional pakai 5 hari terakhir.
-  const heat = camera.kind === 'province' ? (heatWeek ?? heatLive) : heatLive
+  // Halaman provinsi hanya memuat sel di dalam poligon provinsinya, supaya bobot
+  // heatmap dinormalisasi ke sel terpadat provinsi itu. Dengan maksimum nasional,
+  // provinsi berapi jarang (misal Sulawesi Tenggara) jatuh di ujung transparan
+  // ramp warna dan tak terlihat di atas peta hijau.
+  const heat = useMemo(() => {
+    if (camera.kind !== 'province') return heatLive
+    const feature = (provincesGeo as GeoJSON.FeatureCollection).features.find(
+      (item) => item.properties?.slug === camera.slug,
+    ) as Parameters<typeof featureContainsPoint>[0] | undefined
+    if (!feature) return []
+    return (heatWeek ?? heatLive).filter(([lng, lat]) => featureContainsPoint(feature, lng, lat))
+  }, [camera, heatWeek, heatLive])
 
   useEffect(() => {
     const map = mapRef.current
