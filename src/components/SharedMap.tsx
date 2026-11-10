@@ -6,12 +6,16 @@ import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
 import { loadHeatWeek, type HeatCells } from '@/data/heat-weekly'
 import { featureContainsPoint } from '@/lib/geo'
+import { loadPosko, type Posko } from '@/data/posko-medis'
+import { PoskoMedisModal } from '@/components/PoskoMedisModal'
+import { PoskoRouteOverlay, type PoskoRoute } from '@/components/PoskoRouteOverlay'
 import { fetchFirmsHeat, readFirmsHeatCache } from '@/lib/firms'
 import { fetchOpenMeteoSnapshot, readOpenMeteoCache, type ProvinceWeather } from '@/lib/open-meteo'
 import { basemapStyle } from '@/lib/basemap-style'
 import { WindSmokeLayer } from '@/components/WindSmokeLayer'
 import markerRing from '@/assets/map/marker-ring.svg'
 import markerCore from '@/assets/map/marker-core.svg'
+import markerMedis from '@/assets/posko/marker-medis.svg'
 
 const FILL_LAYER = 'province-fill'
 const FILL_HOVER_LAYER = 'province-fill-hover'
@@ -19,6 +23,9 @@ const BORDER_LAYER = 'province-border'
 const HEAT_LAYER = 'fire-heat'
 const SOURCE_PROVINCES = 'provinces'
 const SOURCE_HEAT = 'fire-heat'
+const ROUTE_LAYER = 'posko-route'
+const ROUTE_LINE_LAYER = 'posko-route-line'
+const SOURCE_ROUTE = 'posko-route'
 
 // Snapshot FIRMS terakhir (bawaan bundle) dipakai sampai data runtime datang.
 const SNAPSHOT_CELLS: HeatCells = (heatCells as { cells: number[][] }).cells.map(
@@ -92,7 +99,7 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'provin
 }
 
 export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMapProps) {
-  const { camera, enterProvince } = useMapTransition()
+  const { camera, enterProvince, goNational } = useMapTransition()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const maplibreRef = useRef<typeof maplibregl | null>(null)
@@ -110,6 +117,13 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
   const [weather, setWeather] = useState<readonly ProvinceWeather[]>(
     () => readOpenMeteoCache()?.weather ?? [],
   )
+  // Toggle Posko Medis di halaman provinsi: slug provinsi yang layernya aktif.
+  const [poskoSlug, setPoskoSlug] = useState<string | null>(null)
+  const [poskoList, setPoskoList] = useState<readonly Posko[]>([])
+  const [poskoDetail, setPoskoDetail] = useState<Posko | null>(null)
+  const [route, setRoute] = useState<PoskoRoute | null>(null)
+  const routeRef = useRef<PoskoRoute | null>(null)
+  const poskoMarkersRef = useRef<maplibregl.Marker[]>([])
 
   // Ref untuk nilai yang dipakai di event handler peta (didaftarkan sekali saat init)
   const cameraRef = useRef(camera)
@@ -121,6 +135,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
   useEffect(() => { enterProvinceRef.current = enterProvince }, [enterProvince])
   useEffect(() => { isMobileRef.current = isMobile }, [isMobile])
   useEffect(() => { viewportRef.current = viewport }, [viewport])
+  useEffect(() => { routeRef.current = route }, [route])
 
   // Posisi kamera landing disimpan di localStorage supaya kembali ke tempat semula
   // setelah keluar dari halaman detail (sama seperti implementasi peta lama)
@@ -562,7 +577,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
-    const locked = camera.kind === 'province'
+    const locked = camera.kind === 'province' && !routeRef.current
     const handlers = [
       map.dragPan,
       map.scrollZoom,
@@ -573,12 +588,15 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
       map.keyboard,
     ]
     handlers.forEach((handler) => (locked ? handler.disable() : handler.enable()))
-  }, [isLoaded, camera.kind])
+  }, [isLoaded, camera.kind, route])
 
   // Framing kamera mengikuti route
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
+
+    // Rute aktif: kamera dipegang effect rute sampai user menutupnya.
+    if (route) return
 
     const padding = getFitPadding(
       isMobile,
@@ -631,7 +649,115 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
       ],
       { padding, duration: 750, essential: true },
     )
-  }, [isLoaded, camera, isMobile, viewport])
+  }, [isLoaded, camera, isMobile, viewport, route])
+
+  // Toggle Posko Medis: ProvincePage mengirim slug saat switch dibuka.
+  useEffect(() => {
+    const onToggle = (event: Event) => {
+      const { slug: activeSlug } = (event as CustomEvent<{ slug: string | null }>).detail
+      setPoskoSlug(activeSlug)
+      // Toggle dimatikan saat pindah halaman; rute yang sedang tampil dibiarkan
+      // karena peta nasional dipakai untuk menggeser peta.
+      if (!activeSlug) setPoskoDetail(null)
+    }
+    window.addEventListener('posko-layer', onToggle)
+    return () => window.removeEventListener('posko-layer', onToggle)
+  }, [])
+
+  // Muat fasilitas provinsi sekali saat dibutuhkan, lalu buang saat pindah halaman.
+  useEffect(() => {
+    if (!poskoSlug) {
+      setPoskoList([])
+      return
+    }
+    let active = true
+    loadPosko(poskoSlug).then((items) => {
+      if (active) setPoskoList(items)
+    })
+    return () => {
+      active = false
+    }
+  }, [poskoSlug])
+
+  // Marker posko di peta. Klik marker membuka detail posko.
+  useEffect(() => {
+    const map = mapRef.current
+    const ml = maplibreRef.current
+    if (!map || !ml || !isLoaded) return
+
+    poskoMarkersRef.current.forEach((marker) => marker.remove())
+    poskoMarkersRef.current = []
+    if (!poskoSlug) return
+
+    poskoMarkersRef.current = poskoList.map((posko) => {
+      const el = document.createElement('img')
+      el.src = markerMedis
+      el.alt = posko.name
+      el.style.cssText = 'width:42px;height:42px;cursor:pointer;display:block;'
+      el.addEventListener('click', (event) => {
+        event.stopPropagation()
+        setPoskoDetail(posko)
+      })
+      return new ml.Marker({ element: el })
+        .setLngLat([posko.lng, posko.lat])
+        .addTo(map)
+    })
+
+    return () => {
+      poskoMarkersRef.current.forEach((marker) => marker.remove())
+      poskoMarkersRef.current = []
+    }
+  }, [isLoaded, poskoSlug, poskoList])
+
+  // Rute posko: garis OSRM plus dua titik. Hanya satu rute aktif.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+
+    if (map.getLayer(ROUTE_LINE_LAYER)) map.removeLayer(ROUTE_LINE_LAYER)
+    if (map.getLayer(ROUTE_LAYER)) map.removeLayer(ROUTE_LAYER)
+    if (map.getSource(SOURCE_ROUTE)) map.removeSource(SOURCE_ROUTE)
+    if (!route) return
+
+    const features: GeoJSON.Feature[] = [
+      ...(route.geometry
+        ? [{ type: 'Feature', properties: {}, geometry: route.geometry } as GeoJSON.Feature]
+        : []),
+      { type: 'Feature', properties: { kind: 'from' }, geometry: { type: 'Point', coordinates: [...route.from] } },
+      { type: 'Feature', properties: { kind: 'to' }, geometry: { type: 'Point', coordinates: [...route.to] } },
+    ]
+
+    map.addSource(SOURCE_ROUTE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features },
+    })
+    map.addLayer({
+      id: ROUTE_LINE_LAYER,
+      type: 'line',
+      source: SOURCE_ROUTE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      // Garis putih: peta dasar hijau gelap, garis hijau tidak terbaca.
+      paint: { 'line-color': '#ffffff', 'line-width': 4, 'line-opacity': 0.95, 'line-dasharray': [2, 1.5] },
+    })
+    map.addLayer({
+      id: ROUTE_LAYER,
+      type: 'circle',
+      source: SOURCE_ROUTE,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 7,
+        'circle-color': ['match', ['get', 'kind'], 'from', '#364bd5', '#3aa852'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    })
+
+    map.fitBounds([[...route.from], [...route.to]] as [[number, number], [number, number]], {
+      padding: { top: 160, bottom: 160, left: 80, right: 80 },
+      duration: 750,
+      maxZoom: 12,
+    })
+  }, [isLoaded, route])
 
   // Arah angin dan sebaran asap hanya relevan di peta, bukan landing.
   const showWindSmoke =
@@ -650,6 +776,21 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
         cells={heat}
         enabled={showWindSmoke}
         isMobile={isMobile}
+      />
+      {route && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[70px] z-30 flex justify-center px-4">
+          <PoskoRouteOverlay route={route} onClose={() => setRoute(null)} />
+        </div>
+      )}
+      <PoskoMedisModal
+        posko={poskoDetail}
+        onRoute={(next) => {
+          setRoute(next)
+          // Rute tampil di peta nasional supaya peta bisa digeser, halaman
+          // provinsi mengunci kamera.
+          if (next && camera.kind === 'province') goNational()
+        }}
+        onClose={() => setPoskoDetail(null)}
       />
     </>
   )

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useMapTransition } from '@/lib/map-transition'
 import { useMobile } from '@/hooks/use-mobile'
 import { findProvince } from '@/data/provinces'
@@ -60,12 +60,22 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
     ispaCases: estimateIspaCases(provincePopulation[slug ?? ''] ?? 0, pm25),
   }
 
+  // Switch Posko Medis mengirim slug ke SharedMap, yang menggambar marker.
+  const [poskoActive, setPoskoActive] = useState(false)
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('posko-layer', { detail: { slug: poskoActive ? slug : null } }))
+    return () => {
+      window.dispatchEvent(new CustomEvent('posko-layer', { detail: { slug: null } }))
+    }
+  }, [poskoActive, slug])
+  const togglePosko = () => setPoskoActive((value) => !value)
+
   if (isMobile) {
     return (
       <div className="pointer-events-none absolute inset-0 z-20 select-none">
         <AppNavbar showBack onBack={goNational} />
         <div className="pointer-events-auto absolute inset-x-4 bottom-0 top-[80px] flex flex-col gap-3 overflow-y-auto pb-4">
-          <InfoCardMobile {...info} />
+          <InfoCardMobile {...info} poskoActive={poskoActive} onTogglePosko={togglePosko} />
           <HistoryPanelMobile values={values} activeIndex={weekIndex} onChange={onWeekChange} />
           <ImpactPanelMobile impact={impact} />
         </div>
@@ -94,7 +104,7 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
             {/* Lebar 35.07% kolom = 393px saat kolom 1120px, dan ikut menyusut
                 sebanding panel bawah begitu kolom lebih sempit. */}
             <FitBox width={393} height={453} align="right" valign="top" className="w-[35.07%] max-w-[393px] max-h-full">
-              <InfoCard {...info} />
+              <InfoCard {...info} poskoActive={poskoActive} onTogglePosko={togglePosko} />
             </FitBox>
           </div>
 
@@ -120,6 +130,8 @@ interface InfoCardData {
   readonly aqi: number
   readonly category: string
   readonly categoryColor: string
+  readonly poskoActive: boolean
+  readonly onTogglePosko: () => void
 }
 
 // Kategori di atas SEDANG pakai teks gradasi terang, AMAN dan SEDANG teks gelap.
@@ -144,8 +156,26 @@ function Gauge({ aqi, color }: { readonly aqi: number; readonly color: string })
   )
 }
 
+// Switch Posko Medis, desain Figma node 291:16880 (default) dan 291:16963 (aktif).
+function PoskoToggle({ active, onClick }: { readonly active: boolean; readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      onClick={onClick}
+      className="absolute inset-x-0 top-[396px] flex cursor-pointer items-center justify-between px-[19px] font-nav text-[18px] font-medium"
+    >
+      <span>Posko Medis</span>
+      <span className={`relative h-5 w-11 rounded-[5px] ${active ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-[#c2c2c2]'}`}>
+        <span className={`absolute top-0.5 size-4 rounded bg-white ${active ? 'right-0.5' : 'left-0.5'}`} />
+      </span>
+    </button>
+  )
+}
+
 // Ukuran kartu dari Figma (393x453), sekarang mengikuti lebar kontainer lewat FitBox.
-function InfoCard({ line1, line2, date, aqi, category, categoryColor }: InfoCardData) {
+function InfoCard({ line1, line2, date, aqi, category, categoryColor, poskoActive, onTogglePosko }: InfoCardData) {
   return (
     <section className="pointer-events-auto relative h-full w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
       <h1 className="absolute inset-x-0 top-[26px] text-center font-heading text-[36px] font-semibold leading-[40px] tracking-[-0.72px]">
@@ -174,16 +204,7 @@ function InfoCard({ line1, line2, date, aqi, category, categoryColor }: InfoCard
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => window.dispatchEvent(new CustomEvent('open-medical-posts'))}
-        className="absolute inset-x-0 top-[396px] flex cursor-pointer items-center justify-between px-[19px] font-nav text-[18px] font-medium"
-      >
-        <span>Posko Medis</span>
-        <span className="relative h-5 w-11 rounded-[5px] bg-[#c2c2c2]">
-          <span className="absolute left-0.5 top-0.5 size-4 rounded bg-white" />
-        </span>
-      </button>
+      <PoskoToggle active={poskoActive} onClick={onTogglePosko} />
     </section>
   )
 }
@@ -394,7 +415,7 @@ function ImpactPanel({ impact }: { readonly impact: ImpactData }) {
   )
 }
 
-function InfoCardMobile({ line1, line2, date, aqi, category, categoryColor }: InfoCardData) {
+function InfoCardMobile({ line1, line2, date, aqi, category, categoryColor, poskoActive, onTogglePosko }: InfoCardData) {
   return (
     <section className="relative h-[380px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
       <h1 className="absolute inset-x-0 top-[20px] text-center font-heading text-[26px] font-semibold leading-[32px] tracking-[-0.72px]">
@@ -431,12 +452,14 @@ function InfoCardMobile({ line1, line2, date, aqi, category, categoryColor }: In
 
       <button
         type="button"
-        onClick={() => window.dispatchEvent(new CustomEvent('open-medical-posts'))}
+        role="switch"
+        aria-checked={poskoActive}
+        onClick={onTogglePosko}
         className="absolute inset-x-0 top-[306px] flex cursor-pointer items-center justify-between px-4 font-nav text-[14px] font-medium"
       >
         <span>Posko Medis</span>
-        <span className="relative h-4 w-9 rounded-[5px] bg-[#c2c2c2]">
-          <span className="absolute left-0.5 top-0.5 size-3 rounded bg-white" />
+        <span className={`relative h-4 w-9 rounded-[5px] ${poskoActive ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-[#c2c2c2]'}`}>
+          <span className={`absolute top-0.5 size-3 rounded bg-white ${poskoActive ? 'right-0.5' : 'left-0.5'}`} />
         </span>
       </button>
     </section>
