@@ -30,18 +30,34 @@ Perintah lain:
 pnpm build     # type check dan build produksi
 pnpm preview   # preview hasil build
 pnpm lint      # oxlint
+pnpm test      # tes parser dan data (node --test)
 ```
 
 ## Status Progres
 
-- [x] Skeleton front-end (routing, Tailwind, Motion, font)
-- [x] Slicing landing page dari Figma (navbar, toggle, search, support buttons, peta interaktif)
-- [x] Halaman detail provinsi (8 provinsi prioritas di Kalimantan dan Sumatera: kartu telemetri AQI dan PM2.5, titik api dinamis, toggle)
-- [x] Timeline slider (linimasa mingguan 13 Sep sampai 25 Okt 2026, 91 ticks, knob dinamis)
-- [ ] Simulasi arah asap
+### Sudah jalan
+
+- [x] Skeleton front-end (routing, Tailwind, Motion, font) dan deploy otomatis ke GitHub Pages
+- [x] Landing page desain baru: navbar, hero, kartu peta nasional, blok tiga fitur, responsif sampai 320px
+- [x] Pencarian provinsi di navbar (38 provinsi, dropdown, Enter untuk membuka hasil pertama)
+- [x] Modal Warga Lapor: pilihan kategori, unggah foto, lokasi GPS otomatis, animasi sukses. Belum mengirim data ke server
+- [x] Peta nasional MapLibre: basemap hijau hasil restyle, boundary 38 provinsi, bubble nama provinsi, tombol zoom dan recenter, kamera dikunci saat masuk halaman detail
+- [x] Heatmap titik api dari snapshot NASA FIRMS 21 sampai 25 Oktober 2026 (cakupan baru Kalimantan dan sebagian Sumatera)
+- [x] Halaman detail provinsi: kartu AQI dengan gauge, status kategori, slider histori area api, panel luas area terbakar dan dampak kesehatan
+- [x] Slider mingguan di halaman provinsi (7 minggu, knob mengikuti kursor, bisa digeser dengan keyboard)
+
+### Belum
+
+- [ ] Data asli per provinsi. AQI, PM2.5, dan jumlah titik api masih placeholder `provinceWeeklyMetrics` (baru 8 provinsi, sisanya memakai data Kalimantan Barat). Angka luas area terbakar dan dampak kesehatan masih statis
+- [ ] Integrasi Open-Meteo saat runtime (`src/lib/open-meteo.ts` sudah ada dan teruji, belum dipakai komponen)
+- [ ] Ambil data FIRMS saat runtime (sekarang memakai snapshot statis)
+- [ ] Simulasi arah sebaran asap (komponen `Toggle` ada, belum dipakai)
 - [ ] Peta HGU korporasi (data dummy)
-- [ ] Navigasi posko dan lapor titik api
+- [ ] Navigasi posko medis (tombol masih memicu event yang belum ditangani)
 - [ ] Komparator luas
+- [ ] Mode hemat data
+- [ ] Uji otomatis untuk komponen UI (baru 13 tes parser dan data, semua lulus)
+- [ ] Cek render peta WebGL di browser biasa (headless tidak menjalankan WebGL)
 
 ## Catatan
 
