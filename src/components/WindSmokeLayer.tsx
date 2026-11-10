@@ -86,11 +86,13 @@ export function WindSmokeLayer({ map, weather, cells, enabled, isMobile }: WindS
     const makeWind = (): Particle => {
       const point = randomPoint()
       const drift = driftAt(point.lng, point.lat, 12, 1.5)
+      const maxLife = 2.5 + Math.random() * 3
       return {
         lng: point.lng,
         lat: point.lat,
-        life: 0,
-        maxLife: 2.5 + Math.random() * 3,
+        // Umur awal acak supaya partikel tidak habis dan lahir serentak.
+        life: Math.random() * maxLife,
+        maxLife,
         dx: drift.dx,
         dy: drift.dy,
         len: 4 + Math.min(drift.speed, 20) * 1.1,
@@ -192,10 +194,19 @@ export function WindSmokeLayer({ map, weather, cells, enabled, isMobile }: WindS
       }
       ctx.stroke()
       return () => {
+        map.off('zoomend', reseed)
         observer.disconnect()
         canvas.remove()
       }
     }
+
+    // Zoom in menyempitkan viewport, jadi partikel di luar layar respawn ke area
+    // sempit itu. Setelah zoom out semuanya menumpuk di sana sampai umurnya habis.
+    // Sebar ulang medan tiap level zoom selesai.
+    const reseed = () => {
+      for (const particle of winds) Object.assign(particle, makeWind())
+    }
+    map.on('zoomend', reseed)
 
     let last = 0
     let frame = 0
@@ -218,6 +229,7 @@ export function WindSmokeLayer({ map, weather, cells, enabled, isMobile }: WindS
     frame = requestAnimationFrame(step)
 
     return () => {
+      map.off('zoomend', reseed)
       cancelAnimationFrame(frame)
       observer.disconnect()
       canvas.remove()
