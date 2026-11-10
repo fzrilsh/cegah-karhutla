@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { AppNavbar } from '@/components/AppNavbar'
 import { useMapTransition } from '@/lib/map-transition'
 import heroForest from '@/assets/landing/hero-forest.webp'
@@ -10,7 +11,8 @@ import iconHand from '@/assets/landing/icon-hand.svg'
 const CONTENT = 'px-4 md:px-[max(16px,calc((100%-1120px)/2))]'
 
 export function LandingPage() {
-  const { enterProvince, goNational } = useMapTransition()
+  const { goNational } = useMapTransition()
+  const mapSectionRef = useRef<HTMLElement>(null)
 
   return (
     <div className="pointer-events-auto absolute inset-0 touch-pan-y overflow-y-auto overscroll-y-contain bg-black select-none">
@@ -28,9 +30,10 @@ export function LandingPage() {
           <div className="absolute inset-0 hidden bg-linear-to-r from-black via-black/60 to-transparent lg:block" />
 
           <div className="pointer-events-auto max-w-[560px] lg:absolute lg:left-0 lg:top-1/2 lg:-translate-y-1/2">
-            <h1 className="mt-8 font-heading text-[32px] font-semibold leading-[1.15] tracking-[-1.28px] text-white sm:text-[40px] lg:mt-0 lg:text-[64px] lg:leading-[76px]">
+            {/* nowrap + clamp: judul wajib 3 baris persis di semua lebar layar */}
+            <h1 className="mt-8 font-heading text-[clamp(20px,8.5vw,32px)] font-semibold leading-[1.15] tracking-[-1.28px] whitespace-nowrap text-white sm:text-[40px] lg:mt-0 lg:text-[64px] lg:leading-[76px]">
               Pantau{' '}
-              <span className="font-logo text-[36px] text-orange-500 lg:text-[68px]">
+              <span className="font-logo text-[clamp(22px,9.6vw,36px)] text-orange-500 lg:text-[68px]">
                 Titik Api
               </span>
               <br />
@@ -45,7 +48,13 @@ export function LandingPage() {
             </p>
             <button
               type="button"
-              onClick={() => enterProvince('kalimantan-barat')}
+              onClick={() =>
+                mapSectionRef.current?.scrollIntoView({
+                  behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                    ? 'auto'
+                    : 'smooth',
+                })
+              }
               className="mt-6 flex h-14 w-full max-w-[393px] cursor-pointer items-center justify-center rounded-[6px] bg-linear-to-r from-green-500 to-green-600 font-nav text-[17px] font-medium text-white transition-transform hover:brightness-110 active:scale-[0.99] lg:mt-8 lg:h-[70px] lg:text-[20px]"
             >
               Lihat Titik Api
@@ -55,7 +64,7 @@ export function LandingPage() {
       </section>
 
       {/* Kartu peta nasional */}
-      <section className={`pointer-events-auto ${CONTENT} mt-8 md:mt-[90px]`}>
+      <section ref={mapSectionRef} className={`pointer-events-auto ${CONTENT} mt-8 scroll-mt-[64px] md:mt-[90px] md:scroll-mt-[79px]`}>
         <button
           type="button"
           onClick={goNational}
