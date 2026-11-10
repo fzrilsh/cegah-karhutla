@@ -370,21 +370,28 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
         el.appendChild(visual)
 
         // Label tidak ikut diskalakan bersama bubble supaya tetap terbaca.
+        // Lebar dibatasi diameter lingkaran dalam yang sudah diskalakan (81.5 * baseScale),
+        // jadi nama panjang turun baris dan tetap di dalam bola.
+        const bubblePx = 81.5 * baseScale
         const label = document.createElement('div')
         label.style.cssText = `
           position:absolute;
-          inset:0;
+          left:50%;
+          top:50%;
+          transform:translate(-50%,-50%);
+          width:${bubblePx}px;
+          max-height:${bubblePx}px;
+          overflow:hidden;
           display:flex;
           align-items:center;
           justify-content:center;
-          padding:0 6px;
           font-family:var(--font-nav);
           font-weight:700;
-          font-size:${isMobile ? 8 : 9}px;
-          line-height:${isMobile ? 9 : 10}px;
+          font-size:${isMobile ? 6 : 8}px;
+          line-height:1.1;
           color:#ffffff;
           text-align:center;
-          word-break:break-word;
+          overflow-wrap:anywhere;
         `
         label.textContent = meta.name
         el.appendChild(label)
