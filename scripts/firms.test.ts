@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   KALIMANTAN_BOUNDS,
+  aggregateFirmsHeat,
   buildFirmsAreaUrl,
   parseFirmsCsv,
   toFirmsGeoJson,
@@ -91,5 +92,33 @@ test('builds a FIRMS area URL without putting a key in source code', () => {
   assert.equal(
     url,
     'https://firms.modaps.eosdis.nasa.gov/api/area/csv/test-key/VIIRS_SNPP_NRT/108,-5,119,5/5/2026-11-08',
+  )
+})
+
+test('aggregates points into 0.02 degree heat cells', () => {
+  const point = (longitude: number, latitude: number, index: number) => ({
+    id: `p${index}`,
+    latitude,
+    longitude,
+    acquisitionDate: '2026-11-08',
+    acquisitionTime: '1000',
+    satellite: 'N21',
+    instrument: 'VIIRS',
+    confidence: 'nominal' as const,
+    frp: 1,
+    dayNight: 'D' as const,
+  })
+  const cells = aggregateFirmsHeat([
+    point(110.001, 0.001, 0),
+    point(110.009, 0.004, 1),
+    point(111.51, -3.29, 2),
+  ])
+
+  assert.deepEqual(
+    cells.sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+    [
+      [110, 0, 2],
+      [111.52, -3.28, 1],
+    ],
   )
 })

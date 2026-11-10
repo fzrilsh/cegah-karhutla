@@ -4,6 +4,7 @@ import { useMapTransition } from '@/lib/map-transition'
 import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/provinces-meta'
 import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
+import { fetchFirmsHeat, readFirmsHeatCache } from '@/lib/firms'
 import { basemapStyle } from '@/lib/basemap-style'
 import markerRing from '@/assets/map/marker-ring.svg'
 import markerCore from '@/assets/map/marker-core.svg'
@@ -15,20 +16,24 @@ const HEAT_LAYER = 'fire-heat'
 const SOURCE_PROVINCES = 'provinces'
 const SOURCE_HEAT = 'fire-heat'
 
-// Titik api FIRMS yang sudah diagregasi per sel 0,02 derajat (lihat heat-cells.json).
-const heatGeo = {
-  type: 'FeatureCollection',
-  features: (heatCells as { cells: number[][] }).cells.map(([lng, lat, count]) => ({
-    type: 'Feature',
-    properties: { count },
-    geometry: { type: 'Point', coordinates: [lng, lat] },
-  })),
-} as GeoJSON.FeatureCollection
+type HeatCells = readonly (readonly [number, number, number])[]
 
-const MAX_HEAT = (heatCells as { cells: number[][] }).cells.reduce(
-  (max, cell) => Math.max(max, cell[2]),
-  1,
+// Snapshot FIRMS terakhir (bawaan bundle) dipakai sampai data runtime datang.
+const SNAPSHOT_CELLS: HeatCells = (heatCells as { cells: number[][] }).cells.map(
+  ([lng, lat, count]) => [lng, lat, count] as const,
 )
+
+const toHeatGeoJson = (cells: HeatCells) =>
+  ({
+    type: 'FeatureCollection',
+    features: cells.map(([lng, lat, count]) => ({
+      type: 'Feature',
+      properties: { count },
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+    })),
+  }) as GeoJSON.FeatureCollection
+
+const maxCount = (cells: HeatCells) => cells.reduce((max, cell) => Math.max(max, cell[2]), 1)
 
 const boundsToLngLat = (b: readonly [number, number, number, number]) => [
   [b[0], b[1]],
@@ -92,6 +97,10 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
   const hoveredRef = useRef<string | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [viewport, setViewport] = useState({ width: 1440, height: 1024 })
+  // Sel heatmap aktif: cache runtime kalau ada, kalau tidak snapshot bundle.
+  const [heat, setHeat] = useState<HeatCells>(
+    () => readFirmsHeatCache()?.cells ?? SNAPSHOT_CELLS,
+  )
 
   // Ref untuk nilai yang dipakai di event handler peta (didaftarkan sekali saat init)
   const cameraRef = useRef(camera)
@@ -169,7 +178,10 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
         attributionControl: false,
       })
 
-      map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-left')
+      map.addControl(
+        new ml.AttributionControl({ compact: true, customAttribution: 'Titik api: NASA FIRMS' }),
+        'bottom-left',
+      )
       const geoData = provincesGeo as GeoJSON.FeatureCollection
 
       map.on('load', () => {
@@ -428,14 +440,25 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
     })
   }, [isLoaded, camera, activeProvinceSlug])
 
+  // Ambil titik api FIRMS terbaru sekali per sesi. Cache TTL 1 jam di lib/firms.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchFirmsHeat({ signal: controller.signal })
+      .then((snapshot) => {
+        if (snapshot.cells.length > 0) setHeat(snapshot.cells)
+      })
+      .catch(() => {
+        // Gagal fetch: tetap pakai cache lama atau snapshot bundle.
+      })
+    return () => controller.abort()
+  }, [])
+
   // Titik api: heatmap dari sel FIRMS yang sudah diagregasi.
   // Tampil di /peta dan halaman detail provinsi.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return
 
-    // Di halaman detail, heatmap hanya untuk provinsi yang punya data.
-    // shortcut: snapshot FIRMS hanya mencakup Kalimantan dan sebagian Sumatera, cakupan penuh perlu pull ulang.
     const showHeat = camera.kind === 'national' || camera.kind === 'province'
 
     if (map.getLayer(HEAT_LAYER)) map.removeLayer(HEAT_LAYER)
@@ -443,7 +466,7 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
 
     if (!showHeat) return
 
-    map.addSource(SOURCE_HEAT, { type: 'geojson', data: heatGeo })
+    map.addSource(SOURCE_HEAT, { type: 'geojson', data: toHeatGeoJson(heat) })
 
     map.addLayer({
       id: HEAT_LAYER,
@@ -452,7 +475,7 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
       maxzoom: 11,
       paint: {
         // Bobot dari jumlah deteksi per sel, dinormalisasi ke nilai maksimum.
-        'heatmap-weight': ['/', ['get', 'count'], MAX_HEAT],
+        'heatmap-weight': ['/', ['get', 'count'], maxCount(heat)],
         'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 5, 1.2, 8, 2],
         'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 3, 18, 5, 30, 8, 45],
         'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.85, 9, 0.85, 11, 0],
@@ -471,7 +494,7 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
 
     // Heatmap di bawah garis batas dan fill provinsi supaya batas tetap terbaca.
     if (map.getLayer(FILL_LAYER)) map.moveLayer(HEAT_LAYER, FILL_LAYER)
-  }, [isLoaded, camera])
+  }, [isLoaded, camera, heat])
 
   // Di halaman detail provinsi peta dikunci supaya fokus ke satu provinsi.
   useEffect(() => {
