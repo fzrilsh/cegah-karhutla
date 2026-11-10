@@ -2,7 +2,16 @@ import { useId, useState } from 'react'
 import { useMapTransition } from '@/lib/map-transition'
 import { useMobile } from '@/hooks/use-mobile'
 import { findProvince } from '@/data/provinces'
-import { provinceWeeklyMetrics, DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
+import {
+  aqiWeeklyFor,
+  burnedWeeklyHaFor,
+  hotspotWeeklyFor,
+  hotspotWeeks,
+  pm25WeeklyFor,
+} from '@/data/hotspot-history'
+import { provincePopulation } from '@/data/province-population'
+import { aqiCategory } from '@/lib/air-quality'
+import { estimateIspaCases } from '@/lib/health'
 import { AppNavbar } from '@/components/AppNavbar'
 import { FitBox } from '@/components/FitBox'
 import areaBurnedIcon from '@/assets/detail/area-burned.svg'
@@ -17,8 +26,6 @@ interface ProvincePageProps {
   readonly onWeekChange: (index: number) => void
 }
 
-const HISTORY_LABELS = ['26 Sep', '3 Okt', '10 Okt', '17 Okt', '24 Okt', '31 Okt', '7 Nov']
-
 // Geometri dari frame Figma 1440x1024 (node 291:15990).
 const CHART_W = 517
 const CHART_H = 103.5
@@ -30,15 +37,27 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
   const { goNational } = useMapTransition()
 
   const province = findProvince(slug)
-  const metrics = (slug ? provinceWeeklyMetrics[slug] : undefined) ?? provinceWeeklyMetrics['kalimantan-barat']
-  const metric = metrics[weekIndex] ?? metrics[DEFAULT_WEEK_INDEX]
+  const values = hotspotWeeklyFor(slug)
+  const aqiValues = aqiWeeklyFor(slug)
+  const week = hotspotWeeks[weekIndex] ?? hotspotWeeks[hotspotWeeks.length - 1]
   const [line1, ...rest] = (province?.name ?? 'Kalimantan Barat').split(' ')
+  // AQI dan tanggal ikut minggu grafik histori, bukan tabel metrik lama.
+  const aqi = aqiValues[weekIndex] ?? 0
+  const category = aqiCategory(aqi)
   const info = {
     line1,
     line2: rest.join(' '),
-    date: metric.dateFull,
-    aqi: metric.aqi,
-    category: metric.category === 'BERBAHAYA!' ? 'SANGAT BERBAHAYA' : metric.category.toUpperCase(),
+    date: week.dateFull,
+    aqi,
+    category: category.label,
+    categoryColor: category.color,
+  }
+  const pm25 = pm25WeeklyFor(slug)[weekIndex] ?? 0
+  const impact = {
+    burnedHa: burnedWeeklyHaFor(slug)[weekIndex] ?? 0,
+    weekLabel: week.dateShort,
+    pm25,
+    ispaCases: estimateIspaCases(provincePopulation[slug ?? ''] ?? 0, pm25),
   }
 
   if (isMobile) {
@@ -47,8 +66,8 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
         <AppNavbar showBack onBack={goNational} />
         <div className="pointer-events-auto absolute inset-x-4 bottom-0 top-[80px] flex flex-col gap-3 overflow-y-auto pb-4">
           <InfoCardMobile {...info} />
-          <HistoryPanelMobile metrics={metrics} activeIndex={weekIndex} onChange={onWeekChange} />
-          <ImpactPanelMobile />
+          <HistoryPanelMobile values={values} activeIndex={weekIndex} onChange={onWeekChange} />
+          <ImpactPanelMobile impact={impact} />
         </div>
       </div>
     )
@@ -82,10 +101,10 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
           {/* Histori dan luas area terbakar satu baris, lebarnya berhenti di ukuran desain. */}
           <div className="flex shrink-0 gap-[2.2%]">
             <FitBox width={605} height={220} className="flex-1">
-              <HistoryPanel metrics={metrics} activeIndex={weekIndex} onChange={onWeekChange} />
+              <HistoryPanel values={values} activeIndex={weekIndex} onChange={onWeekChange} />
             </FitBox>
             <FitBox width={605} height={220} className="flex-1">
-              <ImpactPanel />
+              <ImpactPanel impact={impact} />
             </FitBox>
           </div>
         </div>
@@ -100,9 +119,13 @@ interface InfoCardData {
   readonly date: string
   readonly aqi: number
   readonly category: string
+  readonly categoryColor: string
 }
 
-function Gauge({ aqi }: { readonly aqi: number }) {
+// Kategori di atas SEDANG pakai teks gradasi terang, AMAN dan SEDANG teks gelap.
+const isDarkText = (category: string) => category === 'AMAN' || category === 'SEDANG'
+
+function Gauge({ aqi, color }: { readonly aqi: number; readonly color: string }) {
   // Knob duduk tepat di atas busur: 0 di kiri, AQI_MAX di kanan.
   const angle = Math.PI * (1 - Math.min(Math.max(aqi / AQI_MAX, 0), 0.96))
 
@@ -110,8 +133,9 @@ function Gauge({ aqi }: { readonly aqi: number }) {
     <div className="absolute left-[69px] top-[163px] h-[160px] w-[256px]">
       <img src={gaugeArc} alt="" className="absolute inset-x-0 top-0 w-full" />
       <div
-        className="absolute size-[30px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[7px] border-[#ebd118] bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6]"
+        className="absolute size-[30px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[7px] bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6]"
         style={{
+          borderColor: color,
           left: 128 + GAUGE_R * Math.cos(angle),
           top: 128 - GAUGE_R * Math.sin(angle),
         }}
@@ -121,7 +145,7 @@ function Gauge({ aqi }: { readonly aqi: number }) {
 }
 
 // Ukuran kartu dari Figma (393x453), sekarang mengikuti lebar kontainer lewat FitBox.
-function InfoCard({ line1, line2, date, aqi, category }: InfoCardData) {
+function InfoCard({ line1, line2, date, aqi, category, categoryColor }: InfoCardData) {
   return (
     <section className="pointer-events-auto relative h-full w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
       <h1 className="absolute inset-x-0 top-[26px] text-center font-heading text-[36px] font-semibold leading-[40px] tracking-[-0.72px]">
@@ -134,15 +158,20 @@ function InfoCard({ line1, line2, date, aqi, category }: InfoCardData) {
         {date}
       </div>
 
-      <Gauge aqi={aqi} />
+      <Gauge aqi={aqi} color={categoryColor} />
 
       <div className="absolute left-1/2 top-[241px] w-[208px] -translate-x-1/2 text-center font-heading text-[64px] font-medium leading-none tracking-[-1.28px]">
         {aqi}
       </div>
       <div className="absolute inset-x-0 top-[298px] text-center font-nav text-[18px] font-medium">AQI</div>
 
-      <div className="absolute left-1/2 top-[333px] flex h-[36px] w-[208px] -translate-x-1/2 items-center justify-center rounded-[6px] bg-[#fba504] font-nav text-[18px] font-bold">
-        <span className="bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent">{category}</span>
+      <div
+        className="absolute left-1/2 top-[333px] flex h-[36px] w-[208px] -translate-x-1/2 items-center justify-center rounded-[6px] font-nav text-[18px] font-bold"
+        style={{ backgroundColor: categoryColor }}
+      >
+        <span className={isDarkText(category) ? 'text-[#1b1b1b]' : 'bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent'}>
+          {category}
+        </span>
       </div>
 
       <button
@@ -160,7 +189,7 @@ function InfoCard({ line1, line2, date, aqi, category }: InfoCardData) {
 }
 
 interface HistoryPanelProps {
-  readonly metrics: readonly { readonly hotspotCount: number }[]
+  readonly values: readonly number[]
   readonly activeIndex: number
   readonly onChange: (index: number) => void
 }
@@ -199,9 +228,8 @@ function yOnCurve(ys: number[], value: number) {
   return u * u * u * y1 + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * y2
 }
 
-function HistoryPanel({ metrics, activeIndex, onChange }: HistoryPanelProps) {
+function HistoryPanel({ values, activeIndex, onChange }: HistoryPanelProps) {
   const gradientId = useId()
-  const values = metrics.map((item) => item.hotspotCount)
   const max = Math.max(...values, 1)
   const step = CHART_W / Math.max(values.length - 1, 1)
   const xs = values.map((_, index) => index * step)
@@ -257,7 +285,7 @@ function HistoryPanel({ metrics, activeIndex, onChange }: HistoryPanelProps) {
         <input
           type="range"
           min={0}
-          max={metrics.length - 1}
+          max={values.length - 1}
           step={0.001}
           value={position}
           onChange={(event) => {
@@ -278,20 +306,20 @@ function HistoryPanel({ metrics, activeIndex, onChange }: HistoryPanelProps) {
                 : 0
             if (!delta) return
             event.preventDefault()
-            onChange(Math.min(Math.max(activeIndex + delta, 0), metrics.length - 1))
+            onChange(Math.min(Math.max(activeIndex + delta, 0), values.length - 1))
           }}
           className="absolute inset-0 z-10 w-full cursor-pointer opacity-0"
           aria-label="Pilih tanggal histori area api"
         />
       </div>
 
-      {HISTORY_LABELS.map((label, index) => (
+      {hotspotWeeks.map((week, index) => (
         <span
-          key={label}
+          key={week.dateIso}
           className="absolute top-[188px] -translate-x-1/2 font-nav text-[14px] text-ink"
-          style={{ left: 30 + index * (CHART_W / (HISTORY_LABELS.length - 1)) }}
+          style={{ left: 30 + index * (CHART_W / (hotspotWeeks.length - 1)) }}
         >
-          {label}
+          {week.dateShort}
         </span>
       ))}
 
@@ -304,35 +332,69 @@ function HistoryPanel({ metrics, activeIndex, onChange }: HistoryPanelProps) {
   )
 }
 
-function ImpactPanel() {
+interface ImpactData {
+  readonly burnedHa: number
+  readonly weekLabel: string
+  readonly pm25: number
+  readonly ispaCases: number
+}
+
+// Luas DKI Jakarta 661,5 km2 = 66.150 hektar, acuan pembanding di desain.
+const DKI_HA = 66150
+const number = new Intl.NumberFormat('id-ID')
+
+function ImpactPanel({ impact }: { readonly impact: ImpactData }) {
+  const jakarta = Math.max(impact.burnedHa / DKI_HA, 0)
+  // Satu ikon mewakili satu kali luas DKI Jakarta, dibulatkan sama dengan teks.
+  // Dibatasi 3 supaya muat di kolom kiri.
+  const mapIcons = Math.min(Math.max(Math.round(jakarta), 1), 3)
+  // Satu ikon orang mewakili 15.000 estimasi kasus, dibatasi 12 (dua baris grid).
+  const personIcons = Math.min(Math.ceil(impact.ispaCases / 15000), 12)
   return (
-    <section className="pointer-events-auto relative h-full w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 text-ink shadow-card">
+    <section className="pointer-events-auto relative h-full w-full overflow-hidden rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 text-ink shadow-card">
       <div className="absolute left-[20px] top-[18px] w-[280px]">
         <h2 className="font-nav text-[18px] font-medium text-gray-500">Luas Area Terbakar</h2>
-        <div className="mt-[10px] whitespace-nowrap font-heading text-[36px] font-semibold leading-[40px]">132.400 hektar</div>
-        <p className="mt-[2px] font-nav text-[18px]">= 2x luas wilayah DKI Jakarta</p>
-        <div className="mt-[10px] flex gap-5" aria-hidden="true">
-          <img src={areaBurnedIcon} alt="" className="h-[66px] w-[75px]" />
-          <img src={areaBurnedIcon} alt="" className="h-[66px] w-[75px]" />
+        <div className="mt-[10px] whitespace-nowrap font-heading text-[36px] font-semibold leading-[40px]">
+          {number.format(impact.burnedHa)} <span className="font-nav text-[20px] font-medium">hektar</span>
         </div>
+        <p className="mt-[2px] font-nav text-[18px]">
+          {jakarta < 1
+            ? `= ${jakarta < 0.01 ? '<1' : Math.round(jakarta * 100)}% luas wilayah DKI Jakarta`
+            : `= ${number.format(Math.round(jakarta))}x luas wilayah DKI Jakarta`}
+        </p>
+        <p className="mt-[2px] font-nav text-[13px] text-gray-500">Minggu {impact.weekLabel}, NASA FIRMS</p>
       </div>
 
       <div className="absolute left-[323px] top-[18px] w-[262px] border-l border-[#909090] pl-[18px]">
         <h2 className="font-nav text-[18px] font-medium text-gray-500">Dampak Kesehatan</h2>
-        <div className="mt-[10px] whitespace-nowrap font-heading text-[36px] font-semibold leading-[40px]">3.800 orang</div>
-        <p className="mt-[2px] font-nav text-[18px]">Berisiko ISPA</p>
-        <div className="mt-[10px] flex max-w-[250px] flex-wrap gap-1" aria-hidden="true">
-          {Array.from({ length: 12 }).map((_, index) => {
-            const icons = [personA, personB, personC]
-            return <img key={index} src={icons[index % icons.length]} alt="" className="size-[34px]" />
-          })}
+        <div className="mt-[10px] whitespace-nowrap font-heading text-[36px] font-semibold leading-[40px]">
+          {number.format(impact.ispaCases)} <span className="font-nav text-[20px] font-medium">orang</span>
         </div>
+        <p className="mt-[2px] font-nav text-[18px]">
+          {impact.pm25 > 0 ? 'Estimasi tambahan ISPA' : 'Data PM2.5 belum tersedia'}
+        </p>
+        <p className="mt-[2px] font-nav text-[11px] text-gray-500">
+          {impact.pm25 > 0 ? `PM2.5 ${number.format(impact.pm25)} µg/m³ · 1 ikon = 15.000 kasus` : ''}
+        </p>
+      </div>
+
+      {/* Ikon menempel di bawah teks, bukan di dasar panel, supaya tidak ada rongga saat ikon sedikit. */}
+      <div className="absolute left-[20px] top-[150px] flex gap-5" aria-hidden="true">
+        {Array.from({ length: mapIcons }).map((_, index) => (
+          <img key={index} src={areaBurnedIcon} alt="" className="h-[52px] w-[59px]" />
+        ))}
+      </div>
+      <div className="absolute left-[341px] top-[150px] flex max-w-[244px] flex-wrap gap-1" aria-hidden="true">
+        {Array.from({ length: personIcons }).map((_, index) => {
+          const icons = [personA, personB, personC]
+          return <img key={index} src={icons[index % icons.length]} alt="" className="size-[28px]" />
+        })}
       </div>
     </section>
   )
 }
 
-function InfoCardMobile({ line1, line2, date, aqi, category }: InfoCardData) {
+function InfoCardMobile({ line1, line2, date, aqi, category, categoryColor }: InfoCardData) {
   return (
     <section className="relative h-[380px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
       <h1 className="absolute inset-x-0 top-[20px] text-center font-heading text-[26px] font-semibold leading-[32px] tracking-[-0.72px]">
@@ -347,8 +409,9 @@ function InfoCardMobile({ line1, line2, date, aqi, category }: InfoCardData) {
       <div className="absolute left-1/2 top-[138px] h-[96px] w-[154px] -translate-x-1/2">
         <img src={gaugeArc} alt="" className="absolute inset-x-0 top-0 w-full" />
         <div
-          className="absolute size-[14px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-[#ebd118] bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6]"
+          className="absolute size-[14px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6]"
           style={{
+            borderColor: categoryColor,
             left: 77 + 73 * Math.cos(Math.PI * (1 - Math.min(Math.max(aqi / AQI_MAX, 0), 0.96))),
             top: 77 - 73 * Math.sin(Math.PI * (1 - Math.min(Math.max(aqi / AQI_MAX, 0), 0.96))),
           }}
@@ -357,8 +420,13 @@ function InfoCardMobile({ line1, line2, date, aqi, category }: InfoCardData) {
 
       <div className="absolute left-1/2 top-[176px] -translate-x-1/2 text-center font-heading text-[38px] font-medium leading-none tracking-[-1.28px]">{aqi}</div>
       <div className="absolute inset-x-0 top-[222px] text-center font-nav text-[13px] font-medium">AQI</div>
-      <div className="absolute left-1/2 top-[250px] flex h-[28px] w-[180px] -translate-x-1/2 items-center justify-center rounded-[6px] bg-[#fba504] font-nav text-[13px] font-bold">
-        <span className="bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent">{category}</span>
+      <div
+        className="absolute left-1/2 top-[250px] flex h-[28px] w-[180px] -translate-x-1/2 items-center justify-center rounded-[6px] font-nav text-[13px] font-bold"
+        style={{ backgroundColor: categoryColor }}
+      >
+        <span className={isDarkText(category) ? 'text-[#1b1b1b]' : 'bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent'}>
+          {category}
+        </span>
       </div>
 
       <button
@@ -375,8 +443,7 @@ function InfoCardMobile({ line1, line2, date, aqi, category }: InfoCardData) {
   )
 }
 
-function HistoryPanelMobile({ metrics, activeIndex, onChange }: HistoryPanelProps) {
-  const values = metrics.map((item) => item.hotspotCount)
+function HistoryPanelMobile({ values, activeIndex, onChange }: HistoryPanelProps) {
   const max = Math.max(...values, 1)
 
   return (
@@ -385,35 +452,48 @@ function HistoryPanelMobile({ metrics, activeIndex, onChange }: HistoryPanelProp
       <div className="mt-3 flex h-[70px] items-end gap-1">
         {values.map((value, index) => (
           <button
-            key={HISTORY_LABELS[index]}
+            key={hotspotWeeks[index]?.dateIso}
             type="button"
             onClick={() => onChange(index)}
-            aria-label={`Pilih ${HISTORY_LABELS[index]}`}
+            aria-label={`Pilih ${hotspotWeeks[index]?.dateShort}`}
             className="flex-1 cursor-pointer rounded-t-[2px] bg-ink/80"
             style={{ height: `${Math.max((value / max) * 100, 4)}%`, opacity: index === activeIndex ? 1 : 0.4 }}
           />
         ))}
       </div>
       <div className="mt-2 flex justify-between font-nav text-[10px] text-ink">
-        {HISTORY_LABELS.map((label) => <span key={label}>{label}</span>)}
+        {hotspotWeeks.map((week) => <span key={week.dateIso}>{week.dateShort}</span>)}
       </div>
     </section>
   )
 }
 
-function ImpactPanelMobile() {
+function ImpactPanelMobile({ impact }: { readonly impact: ImpactData }) {
+  const jakarta = Math.max(impact.burnedHa / DKI_HA, 0)
   return (
     <section className="relative w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
       <div className="grid grid-cols-2 gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-nav text-[14px] font-medium text-gray-500">Luas Area Terbakar</h2>
-          <div className="mt-1 font-heading text-[22px] font-semibold leading-none">132.400 hektar</div>
-          <p className="mt-1 font-nav text-[12px]">= 2x luas wilayah DKI Jakarta</p>
+          <div className="mt-1 font-heading text-[20px] font-semibold leading-tight">
+            {number.format(impact.burnedHa)} <span className="font-nav text-[12px] font-medium">hektar</span>
+          </div>
+          <p className="mt-1 font-nav text-[12px]">
+            {jakarta < 1
+              ? `= ${jakarta < 0.01 ? '<1' : Math.round(jakarta * 100)}% luas DKI Jakarta`
+              : `= ${number.format(Math.round(jakarta))}x luas DKI Jakarta`}
+          </p>
+          <p className="mt-1 font-nav text-[11px] text-gray-500">Minggu {impact.weekLabel}, NASA FIRMS</p>
         </div>
-        <div className="border-l border-[#909090] pl-3">
+        <div className="min-w-0 border-l border-[#909090] pl-3">
           <h2 className="font-nav text-[14px] font-medium text-gray-500">Dampak Kesehatan</h2>
-          <div className="mt-1 font-heading text-[22px] font-semibold leading-none">3.800 orang</div>
-          <p className="mt-1 font-nav text-[12px]">Berisiko ISPA</p>
+          <div className="mt-1 font-heading text-[20px] font-semibold leading-tight">
+            {number.format(impact.ispaCases)} <span className="font-nav text-[12px] font-medium">orang</span>
+          </div>
+          <p className="mt-1 font-nav text-[12px]">{impact.pm25 > 0 ? 'Estimasi tambahan ISPA' : 'Data PM2.5 belum tersedia'}</p>
+          {impact.pm25 > 0 && (
+            <p className="mt-1 font-nav text-[11px] text-gray-500">PM2.5 {number.format(impact.pm25)} µg/m³</p>
+          )}
         </div>
       </div>
     </section>

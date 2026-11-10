@@ -4,6 +4,7 @@ import { useMapTransition } from '@/lib/map-transition'
 import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/provinces-meta'
 import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
+import { loadHeatWeek, type HeatCells } from '@/data/heat-weekly'
 import { fetchFirmsHeat, readFirmsHeatCache } from '@/lib/firms'
 import { fetchOpenMeteoSnapshot, readOpenMeteoCache, type ProvinceWeather } from '@/lib/open-meteo'
 import { basemapStyle } from '@/lib/basemap-style'
@@ -17,8 +18,6 @@ const BORDER_LAYER = 'province-border'
 const HEAT_LAYER = 'fire-heat'
 const SOURCE_PROVINCES = 'provinces'
 const SOURCE_HEAT = 'fire-heat'
-
-type HeatCells = readonly (readonly [number, number, number])[]
 
 // Snapshot FIRMS terakhir (bawaan bundle) dipakai sampai data runtime datang.
 const SNAPSHOT_CELLS: HeatCells = (heatCells as { cells: number[][] }).cells.map(
@@ -45,6 +44,7 @@ const boundsToLngLat = (b: readonly [number, number, number, number]) => [
 interface SharedMapProps {
   readonly isMobile: boolean
   readonly activeProvinceSlug?: string
+  readonly weekIndex: number
 }
 
 function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'province', viewport: { width: number; height: number }) {
@@ -90,7 +90,7 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'provin
   }
 }
 
-export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
+export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMapProps) {
   const { camera, enterProvince } = useMapTransition()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -99,10 +99,12 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
   const hoveredRef = useRef<string | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [viewport, setViewport] = useState({ width: 1440, height: 1024 })
-  // Sel heatmap aktif: cache runtime kalau ada, kalau tidak snapshot bundle.
-  const [heat, setHeat] = useState<HeatCells>(
+  // Sel heatmap peta nasional: cache runtime FIRMS kalau ada, kalau tidak snapshot bundle.
+  const [heatLive, setHeatLive] = useState<HeatCells>(
     () => readFirmsHeatCache()?.cells ?? SNAPSHOT_CELLS,
   )
+  // Sel heatmap minggu terpilih di halaman provinsi, dari snapshot build-time.
+  const [heatWeek, setHeatWeek] = useState<HeatCells | null>(null)
   // Sampel angin per provinsi, dipakai bersama oleh partikel angin dan asap.
   const [weather, setWeather] = useState<readonly ProvinceWeather[]>(
     () => readOpenMeteoCache()?.weather ?? [],
@@ -185,7 +187,7 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
       })
 
       map.addControl(
-        new ml.AttributionControl({ compact: true, customAttribution: 'Titik api: NASA FIRMS' }),
+        new ml.AttributionControl({ compact: true, customAttribution: '© NASA FIRMS' }),
         'bottom-left',
       )
       const geoData = provincesGeo as GeoJSON.FeatureCollection
@@ -458,13 +460,31 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
     const controller = new AbortController()
     fetchFirmsHeat({ signal: controller.signal })
       .then((snapshot) => {
-        if (snapshot.cells.length > 0) setHeat(snapshot.cells)
+        if (snapshot.cells.length > 0) setHeatLive(snapshot.cells)
       })
       .catch(() => {
         // Gagal fetch: tetap pakai cache lama atau snapshot bundle.
       })
     return () => controller.abort()
   }, [])
+
+  // Halaman provinsi: muat sel heatmap minggu terpilih, ikut slider.
+  // Peta nasional tetap pakai data 5 hari terakhir karena tidak punya slider.
+  const isProvinceView = camera.kind === 'province'
+  useEffect(() => {
+    if (!isProvinceView) return
+    let active = true
+    loadHeatWeek(weekIndex)
+      .then((cells) => {
+        if (active) setHeatWeek(cells)
+      })
+      .catch(() => {
+        // Gagal muat: heatmap tetap pakai sel terakhir yang tampil.
+      })
+    return () => {
+      active = false
+    }
+  }, [isProvinceView, weekIndex])
 
   // Ambil sampel angin/udara sekali per sesi, cache 15 menit di lib/open-meteo.
   useEffect(() => {
@@ -478,7 +498,10 @@ export function SharedMap({ isMobile, activeProvinceSlug }: SharedMapProps) {
   }, [])
 
   // Titik api: heatmap dari sel FIRMS yang sudah diagregasi.
-  // Tampil di /peta dan halaman detail provinsi.
+  // Tampil di /peta dan halaman detail provinsi. Halaman provinsi pakai minggu
+  // terpilih, peta nasional pakai 5 hari terakhir.
+  const heat = camera.kind === 'province' ? (heatWeek ?? heatLive) : heatLive
+
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isLoaded) return

@@ -79,7 +79,7 @@ function Root() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-stage select-none">
       {/* SharedMap selalu di-mount sekali, persist camera state antar route */}
-      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} />
+      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} weekIndex={weekIndex} />
       {/* Overlay berubah sesuai route, peta tetap */}
       {isLanding && <LandingOverlay />}
       {isNational && <NationalOverlay />}
