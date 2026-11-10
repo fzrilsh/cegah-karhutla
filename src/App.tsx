@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, useLocation } from 'react-router'
-import { LazyMotion, MotionConfig, domAnimation, m } from 'motion/react'
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m } from 'motion/react'
+import { SplashScreen } from '@/components/SplashScreen'
 import { LandingPage } from '@/pages/LandingPage'
 import { NationalMapPage } from '@/pages/NationalMapPage'
 import { ProvincePage } from '@/pages/ProvincePage'
@@ -76,14 +77,47 @@ function Root() {
   const weekIndex = selection.slug === slug ? selection.weekIndex : DEFAULT_WEEK_INDEX
   const handleWeekChange = (index: number) => setSelection({ slug, weekIndex: index })
 
+  // Splash tampil tiap masuk /peta, bukan landing atau provinsi.
+  // Peta sudah selesai load kalau user datang dari landing (SharedMap mount sekali),
+  // jadi beri waktu tampil minimum supaya splash terlihat, bukan berkedip.
+  // Batas atas 2,5 detik sesuai docs/DATA-SOURCES.md.
+  const SPLASH_MIN_MS = 900
+  const SPLASH_MAX_MS = 2500
+  const [mapReady, setMapReady] = useState(false)
+  // location.key unik per navigasi, jadi ini mereset splash tiap kali /peta dibuka.
+  const [dismissedSplashKey, setDismissedSplashKey] = useState<string | null>(null)
+  const splashVisible = isNational && dismissedSplashKey !== location.key
+  const splashStartRef = useRef(0)
+
+  useEffect(() => {
+    if (splashVisible) splashStartRef.current = performance.now()
+  }, [splashVisible])
+
+  useEffect(() => {
+    if (!splashVisible) return
+    const elapsed = performance.now() - splashStartRef.current
+    const budget = mapReady ? SPLASH_MIN_MS : SPLASH_MAX_MS
+    const timer = setTimeout(
+      () => setDismissedSplashKey(location.key),
+      Math.max(0, budget - elapsed),
+    )
+    return () => clearTimeout(timer)
+  }, [splashVisible, mapReady, location.key])
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-stage select-none">
       {/* SharedMap selalu di-mount sekali, persist camera state antar route */}
-      <SharedMap isMobile={isMobile} activeProvinceSlug={slug} weekIndex={weekIndex} />
+      <SharedMap
+        isMobile={isMobile}
+        activeProvinceSlug={slug}
+        weekIndex={weekIndex}
+        onReady={() => setMapReady(true)}
+      />
       {/* Overlay berubah sesuai route, peta tetap */}
       {isLanding && <LandingOverlay />}
       {isNational && <NationalOverlay />}
       {slug && <ProvinceOverlay weekIndex={weekIndex} onWeekChange={handleWeekChange} />}
+      <AnimatePresence>{splashVisible && <SplashScreen />}</AnimatePresence>
     </div>
   )
 }

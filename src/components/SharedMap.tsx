@@ -53,6 +53,7 @@ interface SharedMapProps {
   readonly isMobile: boolean
   readonly activeProvinceSlug?: string
   readonly weekIndex: number
+  readonly onReady?: () => void
 }
 
 function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'province', viewport: { width: number; height: number }) {
@@ -98,7 +99,7 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'provin
   }
 }
 
-export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMapProps) {
+export function SharedMap({ isMobile, activeProvinceSlug, weekIndex, onReady }: SharedMapProps) {
   const { camera, enterProvince, goNational } = useMapTransition()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -136,6 +137,9 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
   useEffect(() => { isMobileRef.current = isMobile }, [isMobile])
   useEffect(() => { viewportRef.current = viewport }, [viewport])
   useEffect(() => { routeRef.current = route }, [route])
+  // onReady dipanggil sekali saat peta selesai load, animasi masuk splash.
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
 
   // Posisi kamera landing disimpan di localStorage supaya kembali ke tempat semula
   // setelah keluar dari halaman detail (sama seperti implementasi peta lama)
@@ -292,6 +296,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex }: SharedMap
         })
 
         setIsLoaded(true)
+        onReadyRef.current?.()
       })
 
       mapRef.current = map
