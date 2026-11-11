@@ -5,7 +5,7 @@ import { provinceMetas, INDONESIA_BOUNDS, LANDING_BOUNDS } from '@/data/province
 import provincesGeo from '@/data/provinces-geo.json'
 import heatCells from '@/data/heat-cells.json'
 import { loadHeatWeek, type HeatCells } from '@/data/heat-weekly'
-import { featureContainsPoint } from '@/lib/geo'
+import { featureContainsPoint, boundsAround } from '@/lib/geo'
 import { loadPosko, type Posko } from '@/data/posko-medis'
 import { PoskoMedisModal } from '@/components/PoskoMedisModal'
 import { PoskoRouteOverlay, type PoskoRoute } from '@/components/PoskoRouteOverlay'
@@ -670,6 +670,12 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex, onReady }: 
     return () => window.removeEventListener('posko-layer', onToggle)
   }, [])
 
+  // Rute hanya untuk peta nasional. Keluar halaman (tombol kembali di navbar)
+  // harus menutup overlay, bukan meninggalkannya di atas peta lain.
+  useEffect(() => {
+    if (camera.kind !== 'national') setRoute(null)
+  }, [camera.kind])
+
   // Muat fasilitas provinsi sekali saat dibutuhkan, lalu buang saat pindah halaman.
   useEffect(() => {
     if (!poskoSlug) {
@@ -758,7 +764,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex, onReady }: 
       },
     })
 
-    map.fitBounds([[...route.from], [...route.to]] as [[number, number], [number, number]], {
+    map.fitBounds(boundsAround(route.from, route.to), {
       padding: { top: 160, bottom: 160, left: 80, right: 80 },
       duration: 750,
       maxZoom: 12,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, m } from 'motion/react'
 import { findProvinceNameAt, formatCoordinate } from '@/lib/geo'
 import provincesGeo from '@/data/provinces-geo.json'
@@ -9,7 +9,26 @@ import iconPhone from '@/assets/posko/icon-phone.svg'
 import iconClose from '@/assets/modal/icon-close.svg'
 
 const OSRM = 'https://router.project-osrm.org/route/v1/driving'
+const NOMINATIM = 'https://nominatim.openstreetmap.org/reverse'
 const GEO_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
+
+// Alamat hasil reverse geocode disimpan per posko supaya membuka ulang tidak
+// menembak Nominatim lagi (kebijakan pemakaiannya satu permintaan per detik).
+const addressCache = new Map<string, string>()
+
+// "Jalan, kelurahan, kecamatan", sesuai permintaan. Google Maps tetap dibuka
+// lewat koordinat, nama ini hanya label.
+function addressLabel(address: Record<string, string> | undefined) {
+  if (!address) return undefined
+  // OSM kadang mengisi addr:road dengan nomor rumah saja ("7"), tidak berguna.
+  const road = address.road && !/^\d+$/.test(address.road) ? address.road : undefined
+  const parts = [
+    road,
+    address.village ?? address.neighbourhood ?? address.suburb,
+    address.city_district ?? address.district ?? address.city ?? address.county,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(', ') : undefined
+}
 
 function Field({ icon, label, value, href }: { readonly icon: string; readonly label: string; readonly value: string; readonly href?: string }) {
   const content = (
@@ -49,6 +68,30 @@ interface PoskoMedisModalProps {
 
 function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> & { posko: Posko }) {
   const [status, setStatus] = useState<string | null>(null)
+  const cacheKey = `${posko.lat},${posko.lng}`
+  const [address, setAddress] = useState<string | undefined>(() => addressCache.get(cacheKey))
+
+  // Nama jalan, kelurahan, kecamatan dari koordinat posko. Gagal atau lambat,
+  // field Lokasi tetap memakai kota atau koordinat bawaan.
+  useEffect(() => {
+    if (addressCache.has(cacheKey)) return
+    const controller = new AbortController()
+    fetch(`${NOMINATIM}?format=jsonv2&zoom=18&addressdetails=1&lat=${posko.lat}&lon=${posko.lng}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { address?: Record<string, string> } | null) => {
+        const label = addressLabel(data?.address)
+        if (!label) return
+        addressCache.set(cacheKey, label)
+        setAddress(label)
+      })
+      .catch(() => {
+        // Tanpa alamat, field Lokasi tetap menampilkan kota atau koordinat.
+      })
+    return () => controller.abort()
+  }, [cacheKey, posko.lat, posko.lng])
 
   // Rute hanya untuk posko di provinsi yang sama dengan lokasi user.
   const poskoProvince = findProvinceNameAt(provincesGeo.features, posko.lng, posko.lat)
@@ -111,8 +154,8 @@ function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> 
         <Field
           icon={iconPin}
           label="Lokasi"
-          value={posko.city || formatCoordinate(posko.lat, posko.lng)}
-          href={`https://www.google.com/maps/search/?api=1&query=${posko.lat},${posko.lng}`}
+          value={address ?? posko.city ?? formatCoordinate(posko.lat, posko.lng)}
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(posko.name)}`}
         />
         <Field icon={iconPhone} label="Telepon" value={posko.phone || 'Belum tersedia'} />
         <button

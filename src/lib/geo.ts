@@ -42,6 +42,19 @@ export function findProvinceNameAt(
   return undefined
 }
 
+// MapLibre membaca pasangan bounds sebagai [barat daya, timur laut]. Kalau
+// dibalik (tujuan di barat asal), east < west dan MapLibre mengira lintas
+// antimeridian, kamera lompat ke belahan bumi lain.
+export function boundsAround(
+  a: readonly [number, number],
+  b: readonly [number, number],
+): [[number, number], [number, number]] {
+  return [
+    [Math.min(a[0], b[0]), Math.min(a[1], b[1])],
+    [Math.max(a[0], b[0]), Math.max(a[1], b[1])],
+  ]
+}
+
 // Format desain: "0.467° LS, 111.330° BT".
 export function formatCoordinate(lat: number, lng: number) {
   const latText = `${Math.abs(lat).toFixed(3)}° ${lat < 0 ? 'LS' : 'LU'}`

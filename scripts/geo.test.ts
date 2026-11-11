@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { featureContainsPoint, findProvinceNameAt, formatCoordinate } from '../src/lib/geo.ts'
+import { boundsAround, featureContainsPoint, findProvinceNameAt, formatCoordinate } from '../src/lib/geo.ts'
 
 const square = (name: string, [minLng, minLat, maxLng, maxLat]: number[]) => ({
   properties: { name },
@@ -28,6 +28,13 @@ test('featureContainsPoint filters heat cells by the province polygon, not its b
   assert.equal(featureContainsPoint(features[0], 105, -2), true)
   assert.equal(featureContainsPoint(features[0], 115, -2), false)
   assert.equal(featureContainsPoint(features[0], 110.5, -2), false)
+})
+
+test('boundsAround orders a route west of the origin as [southwest, northeast]', () => {
+  // Tujuan di barat asal. Dibalik, MapLibre menganggapnya lintas antimeridian
+  // dan kamera lompat ke belahan bumi lain.
+  assert.deepEqual(boundsAround([106.63, -6.18], [106.6047, -6.1878]), [[106.6047, -6.1878], [106.63, -6.18]])
+  assert.deepEqual(boundsAround([106.63, -6.18], [106.72, -6.12]), [[106.63, -6.18], [106.72, -6.12]])
 })
 
 test('formats coordinates with LS/BT hemisphere labels', () => {
