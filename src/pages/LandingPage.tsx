@@ -67,7 +67,7 @@ export function LandingPage() {
       <section ref={mapSectionRef} className={`pointer-events-auto ${CONTENT} mt-8 scroll-mt-[64px] md:mt-[90px] md:scroll-mt-[79px]`}>
         <button
           type="button"
-          onClick={goNational}
+          onClick={() => goNational()}
           className="relative block w-full cursor-pointer overflow-hidden rounded-[6px] border border-green-500 text-left"
         >
           <img

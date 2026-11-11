@@ -35,6 +35,8 @@ const GAUGE_R = 121
 export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProps) {
   const isMobile = useMobile()
   const { goNational } = useMapTransition()
+  // Kembali dari detail: peta sudah tampil di belakang sheet, jadi tanpa splash.
+  const backToNational = () => goNational({ fromProvince: true })
 
   const province = findProvince(slug)
   const values = hotspotWeeklyFor(slug)
@@ -129,7 +131,7 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
   if (isMobile) {
     return (
       <div className="pointer-events-none absolute inset-0 z-20 select-none">
-        <AppNavbar showBack onBack={goNational} />
+        <AppNavbar showBack onBack={backToNational} />
         {/* Sheet dua tinggi: ringkasan AQI 196px supaya peta tetap terlihat,
             detail dibuka sampai 78vh (maks 560px) lalu digulir di dalam.
             Tinggi tetap, buka tutup lewat translateY supaya hanya transform
@@ -227,7 +229,7 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
       {/* Latar navbar selebar layar, isinya dibatasi kolom 1120px lalu di tengah,
           jadi tepi isi navbar sejajar tepi panel. */}
       <div className="md:[&>header]:px-[max(16px,calc((100%-1120px)/2))]">
-        <AppNavbar showBack onBack={goNational} />
+        <AppNavbar showBack onBack={backToNational} />
       </div>
 
       {/* Kolom isi dikunci 1120px lalu di tengah, jadi margin kanan kiri 160px di

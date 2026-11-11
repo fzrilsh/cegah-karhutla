@@ -15,7 +15,7 @@ export type MapCameraState =
 interface MapTransitionApi {
   readonly camera: MapCameraState
   readonly enterProvince: (slug: string) => void
-  readonly goNational: () => void
+  readonly goNational: (options?: { fromProvince?: boolean }) => void
   readonly goLanding: () => void
   readonly goProvince: (slug: string) => void
 }
@@ -44,9 +44,14 @@ export function MapTransitionProvider({ children }: { children: ReactNode }) {
     [navigate],
   )
 
-  const goNational = useCallback(() => {
-    navigate('/peta')
-  }, [navigate])
+  // fromProvince dipakai App untuk melewati splash: peta sudah tampil di
+  // belakang sheet provinsi, jadi splash cuma bikin kedip.
+  const goNational = useCallback(
+    (options?: { fromProvince?: boolean }) => {
+      navigate('/peta', { state: options?.fromProvince ? { fromProvince: true } : null })
+    },
+    [navigate],
+  )
 
   const goLanding = useCallback(() => {
     navigate('/')

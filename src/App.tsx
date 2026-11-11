@@ -84,9 +84,14 @@ function Root() {
   const SPLASH_MIN_MS = 900
   const SPLASH_MAX_MS = 2500
   const [mapReady, setMapReady] = useState(false)
-  // location.key unik per navigasi, jadi ini mereset splash tiap kali /peta dibuka.
+  // location.key unik per navigasi, jadi ini mereset splash tiap kali /peta
+  // dibuka.
   const [dismissedSplashKey, setDismissedSplashKey] = useState<string | null>(null)
-  const splashVisible = isNational && dismissedSplashKey !== location.key
+  // Kembali dari detail provinsi tidak perlu splash: peta sudah tampil di
+  // belakang sheet, splash cuma bikin kedip. Penandanya dari navigate state
+  // di goNational, bukan menebak route sebelumnya.
+  const fromProvince = (location.state as { fromProvince?: boolean } | null)?.fromProvince === true
+  const splashVisible = isNational && dismissedSplashKey !== location.key && !fromProvince
   const splashStartRef = useRef(0)
 
   useEffect(() => {

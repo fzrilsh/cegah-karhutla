@@ -28,11 +28,15 @@ export function SplashScreen() {
       transition={{ duration: 0.4 }}
       className="pointer-events-auto absolute inset-0 z-50 overflow-hidden bg-black"
     >
-      {/* Foto Figma digambar 3438x1934 pada frame 1440x1024 lalu digeser ke kiri atas. */}
+      {/* Foto Figma digambar 3438x1934 pada frame 1440x1024 lalu digeser ke kiri atas.
+          Di desktop rasio kotak ini sama dengan rasio foto, jadi hasilnya persis
+          Figma. Di HP kotaknya ikut sempit, jadi object-cover memotong dari kanan
+          alih-alih memampatkan foto. Kanan dipilih karena di situlah petani,
+          subjek utamanya; tengah cuma hutan gelap. */}
       <img
         src={heroPhoto}
         alt=""
-        className="absolute max-w-none"
+        className="absolute max-w-none object-cover object-right"
         style={{ width: '238.75%', height: '188.87%', left: '-138.75%', top: '-56.54%' }}
       />
       <div

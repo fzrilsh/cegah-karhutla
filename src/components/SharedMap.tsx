@@ -794,7 +794,7 @@ export function SharedMap({ isMobile, activeProvinceSlug, weekIndex, onReady }: 
           setRoute(next)
           // Rute tampil di peta nasional supaya peta bisa digeser, halaman
           // provinsi mengunci kamera.
-          if (next && camera.kind === 'province') goNational()
+          if (next && camera.kind === 'province') goNational({ fromProvince: true })
         }}
         onClose={() => setPoskoDetail(null)}
       />
