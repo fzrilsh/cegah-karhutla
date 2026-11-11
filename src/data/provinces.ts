@@ -1,4 +1,4 @@
-import { provinceMetas } from './provinces-meta'
+import { provinceMetas } from './provinces-meta.ts'
 
 // Satu sumber daftar provinsi: turunan dari geometri 38 provinsi.
 export const provinces = provinceMetas.map(({ slug, name }) => ({ slug, name }))

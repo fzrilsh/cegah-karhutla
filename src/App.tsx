@@ -5,10 +5,11 @@ import { SplashScreen } from '@/components/SplashScreen'
 import { LandingPage } from '@/pages/LandingPage'
 import { NationalMapPage } from '@/pages/NationalMapPage'
 import { ProvincePage } from '@/pages/ProvincePage'
+import { NotFoundPage } from '@/pages/NotFoundPage'
 import { SharedMap } from '@/components/SharedMap'
 import { Seo } from '@/components/Seo'
 import { MapTransitionProvider } from '@/lib/map-transition'
-import { normalizePath } from '@/lib/path'
+import { routeFromPath } from '@/lib/path'
 import { useMobile } from '@/hooks/use-mobile'
 import { DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
 
@@ -66,11 +67,11 @@ function ProvinceOverlay({ weekIndex, onWeekChange }: ProvinceOverlayProps) {
 function Root() {
   const isMobile = useMobile()
   const location = useLocation()
-  // Route hasil prerender memakai trailing slash ('/peta/'), jadi dibandingkan tanpa slash.
-  const path = normalizePath(location.pathname)
-  const isLanding = path === '/'
-  const isNational = path === '/peta'
-  const slug = path.startsWith('/provinsi/') ? path.split('/')[2] : undefined
+  // Route hasil prerender memakai trailing slash ('/peta/'), routeFromPath menormalkan.
+  const route = routeFromPath(location.pathname)
+  const isLanding = route.kind === 'landing'
+  const isNational = route.kind === 'national'
+  const slug = route.kind === 'province' ? route.slug : undefined
 
   // Minggu terpilih disimpan di sini supaya slider di halaman provinsi dan peta memakai nilai yang sama.
   // Pindah halaman (termasuk ke landing) mengembalikannya ke minggu default.
@@ -125,6 +126,7 @@ function Root() {
       {isLanding && <LandingOverlay />}
       {isNational && <NationalOverlay />}
       {slug && <ProvinceOverlay weekIndex={weekIndex} onWeekChange={handleWeekChange} />}
+      {route.kind === 'not-found' && <NotFoundPage />}
       <AnimatePresence>{splashVisible && <SplashScreen />}</AnimatePresence>
     </div>
   )
