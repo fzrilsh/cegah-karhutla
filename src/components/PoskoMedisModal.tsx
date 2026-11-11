@@ -67,7 +67,7 @@ interface PoskoMedisModalProps {
 }
 
 function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> & { posko: Posko }) {
-  const [status, setStatus] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
   const cacheKey = `${posko.lat},${posko.lng}`
   const [address, setAddress] = useState<string | undefined>(() => addressCache.get(cacheKey))
 
@@ -98,15 +98,15 @@ function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> 
 
   const startRoute = () => {
     if (!('geolocation' in navigator)) {
-      setStatus('Perangkat tidak mendukung lokasi')
+      setStatus({ text: 'Perangkat tidak mendukung lokasi', error: true })
       return
     }
-    setStatus('Mengambil rute...')
+    setStatus({ text: 'Mengambil rute...', error: false })
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         const from = [longitude, latitude] as const
         if (findProvinceNameAt(provincesGeo.features, longitude, latitude) !== poskoProvince) {
-          setStatus('Lokasi kamu di luar provinsi posko ini, rute tidak ditampilkan')
+          setStatus({ text: 'Lokasi kamu di luar provinsi posko ini, rute tidak ditampilkan', error: true })
           return
         }
         const to = [posko.lng, posko.lat] as const
@@ -119,10 +119,10 @@ function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> 
         } catch {
           // Rute gagal dimuat, peta tetap diarahkan ke dua titik.
           onRoute({ label: posko.name, from, to, geometry: null })
-          setStatus('Rute gagal dimuat, peta tetap menampilkan dua titik')
+          setStatus({ text: 'Rute gagal dimuat, peta tetap menampilkan dua titik', error: true })
         }
       },
-      () => setStatus('Lokasi tidak tersedia, izinkan akses lokasi'),
+      () => setStatus({ text: 'Lokasi tidak tersedia, izinkan akses lokasi', error: true }),
       GEO_OPTIONS,
     )
   }
@@ -166,8 +166,11 @@ function Panel({ posko, onRoute, onClose }: Omit<PoskoMedisModalProps, 'posko'> 
           Tunjukkan Rute
         </button>
         {status && (
-          <p role="status" className="mt-3 text-center font-nav text-[14px] text-gray-500">
-            {status}
+          <p
+            role={status.error ? 'alert' : 'status'}
+            className={`mt-3 text-center font-nav text-[14px] font-medium ${status.error ? 'text-danger' : 'text-gray-500'}`}
+          >
+            {status.text}
           </p>
         )}
       </div>

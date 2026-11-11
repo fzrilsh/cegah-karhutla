@@ -347,6 +347,32 @@ function InfoCard({ line1, line2, date, aqi, category, categoryColor, poskoActiv
   )
 }
 
+const HISTORY_INFO =
+  'Jumlah titik api per minggu dari deteksi satelit NASA FIRMS (VIIRS dan MODIS). Angka dihitung otomatis dari heatmap, bukan laporan resmi jumlah kejadian kebakaran.'
+const BURNED_INFO =
+  'Luas terbakar dihitung dari piksel deteksi panas NASA FIRMS, tiap piksel dihitung sekali (VIIRS 375 m, MODIS 1 km). Ini perkiraan dari heatmap, bukan angka resmi luas area terbakar.'
+
+// Tombol info kecil: tooltip muncul saat hover atau fokus keyboard.
+function InfoDot({ text }: { readonly text: string }) {
+  return (
+    <span className="group/info relative inline-flex shrink-0">
+      <button
+        type="button"
+        aria-label={text}
+        className="cursor-help font-nav text-[24px] font-bold leading-none text-[#909090] transition-colors hover:text-ink"
+      >
+        i
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-[22px] z-20 w-[230px] rounded-[6px] bg-ink/90 px-2.5 py-2 text-left font-nav text-[11px] font-normal leading-snug text-paper opacity-0 transition-opacity group-focus-within/info:opacity-100 group-hover/info:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
 interface HistoryPanelProps {
   readonly values: readonly number[]
   readonly activeIndex: number
@@ -408,6 +434,10 @@ function HistoryPanel({ values, activeIndex, onChange }: HistoryPanelProps) {
   return (
     <section className="pointer-events-auto relative h-full w-full rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 text-ink shadow-card">
       <h2 className="absolute left-[20px] top-[18px] font-nav text-[18px] font-medium text-gray-500">Histori Area Api</h2>
+      {/* Sejajar sumbu legenda warna di bawahnya (right 22px, lebar 10px, tengah 17px). */}
+      <div className="absolute right-[27px] top-[18px] translate-x-1/2">
+        <InfoDot text={HISTORY_INFO} />
+      </div>
 
       <div className="absolute left-[30px] top-[74.5px]" style={{ width: CHART_W, height: CHART_H }}>
         <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" className="absolute inset-0 size-full">
@@ -511,6 +541,9 @@ function ImpactPanel({ impact }: { readonly impact: ImpactData }) {
   const personIcons = Math.min(Math.ceil(impact.ispaCases / 15000), 12)
   return (
     <section className="pointer-events-auto relative h-full w-full overflow-hidden rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 text-ink shadow-card">
+      <div className="absolute right-[20px] top-[18px] z-20">
+        <InfoDot text={BURNED_INFO} />
+      </div>
       <div className="absolute left-[20px] top-[18px] w-[280px]">
         <h2 className="font-nav text-[18px] font-medium text-gray-500">Luas Area Terbakar</h2>
         <div className="mt-[10px] whitespace-nowrap font-heading text-[36px] font-semibold leading-[40px]">
@@ -558,7 +591,10 @@ function HistoryPanelMobile({ values, activeIndex, onChange }: HistoryPanelProps
 
   return (
     <section className="relative h-[170px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
-      <h2 className="font-nav text-[14px] font-medium text-gray-500">Histori Area Api</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-nav text-[14px] font-medium text-gray-500">Histori Area Api</h2>
+        <InfoDot text={HISTORY_INFO} />
+      </div>
       <div className="mt-3 flex h-[70px] items-end gap-1">
         {values.map((value, index) => (
           <button
@@ -584,7 +620,10 @@ function ImpactPanelMobile({ impact }: { readonly impact: ImpactData }) {
     <section className="relative w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-green-200 px-4 pb-3 pt-3 text-ink shadow-card">
       <div className="grid grid-cols-2 gap-3">
         <div className="min-w-0">
-          <h2 className="font-nav text-[14px] font-medium text-gray-500">Luas Area Terbakar</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-nav text-[14px] font-medium text-gray-500">Luas Area Terbakar</h2>
+            <InfoDot text={BURNED_INFO} />
+          </div>
           <div className="mt-1 font-heading text-[20px] font-semibold leading-tight">
             {number.format(impact.burnedHa)} <span className="font-nav text-[12px] font-medium">hektar</span>
           </div>
