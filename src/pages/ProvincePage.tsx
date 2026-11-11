@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useMapTransition } from '@/lib/map-transition'
 import { useMobile } from '@/hooks/use-mobile'
 import { findProvince } from '@/data/provinces'
@@ -69,15 +69,151 @@ export function ProvincePage({ slug, weekIndex, onWeekChange }: ProvincePageProp
     }
   }, [poskoActive, slug])
   const togglePosko = () => setPoskoActive((value) => !value)
+  // Mobile: sheet ringkas AQI saja, histori dan dampak disembunyikan sampai dibuka.
+  // ProvinceOverlay memakai key per path, jadi state ikut reset saat ganti provinsi.
+  const [detailOpen, setDetailOpen] = useState(false)
+  // Geser sheet lewat handle. dragOffset = jarak turun dari atas layar dalam px,
+// null kalau tidak sedang digeser. Terbuka 0, tertutup sheetHeight - 196.
+  const COLLAPSED_H = 196
+  // Tinggi sheet diukur, bukan dihitung ulang, supaya geser cocok dengan CSS
+  // min(78vh, 560px). Nilai awal dari viewport supaya tidak berkedip terbuka.
+  const [sheetHeight, setSheetHeight] = useState(() =>
+    typeof window === 'undefined' ? 560 : Math.min(window.innerHeight * 0.78, 560),
+  )
+  const [dragOffset, setDragOffset] = useState<number | null>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startY: number; startOffset: number; max: number; moved: boolean } | null>(null)
+
+  useEffect(() => {
+    const el = sheetRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => setSheetHeight(el.offsetHeight))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [isMobile])
+
+  const closedOffset = Math.max(sheetHeight - COLLAPSED_H, 0)
+  const settledOffset = detailOpen ? 0 : closedOffset
+
+  const onHandleDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const height = sheetRef.current?.offsetHeight ?? 0
+    const max = Math.max(height - COLLAPSED_H, 0)
+    setSheetHeight(height)
+    dragRef.current = { startY: event.clientY, startOffset: detailOpen ? 0 : max, max, moved: false }
+    setDragOffset(detailOpen ? 0 : max)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const onHandleMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const delta = event.clientY - drag.startY
+    if (Math.abs(delta) > 4) drag.moved = true
+    setDragOffset(Math.min(Math.max(drag.startOffset + delta, 0), drag.max))
+  }
+  const onHandleUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (!drag) return
+    if (!drag.moved) {
+      setDetailOpen((value) => !value)
+    } else {
+      // Lewat separuh jalan dianggap buka.
+      setDetailOpen((dragOffset ?? drag.startOffset) < drag.max / 2)
+    }
+    setDragOffset(null)
+  }
 
   if (isMobile) {
     return (
       <div className="pointer-events-none absolute inset-0 z-20 select-none">
         <AppNavbar showBack onBack={goNational} />
-        <div className="pointer-events-auto absolute inset-x-4 bottom-0 top-[80px] flex flex-col gap-3 overflow-y-auto pb-4">
-          <InfoCardMobile {...info} poskoActive={poskoActive} onTogglePosko={togglePosko} />
-          <HistoryPanelMobile values={values} activeIndex={weekIndex} onChange={onWeekChange} />
-          <ImpactPanelMobile impact={impact} />
+        {/* Sheet dua tinggi: ringkasan AQI 196px supaya peta tetap terlihat,
+            detail dibuka sampai 78vh (maks 560px) lalu digulir di dalam.
+            Tinggi tetap, buka tutup lewat translateY supaya hanya transform
+            yang dianimasikan. */}
+        <div
+          ref={sheetRef}
+          style={{ transform: `translateY(${dragOffset ?? settledOffset}px)` }}
+          className={`pointer-events-auto absolute inset-x-0 bottom-0 flex h-[min(78vh,560px)] flex-col overflow-hidden rounded-t-[16px] border-t border-black/10 bg-[#f1f1f1] shadow-card ${
+            dragOffset === null ? 'transition-transform duration-[250ms] ease-out motion-reduce:transition-none' : ''
+          }`}
+        >
+          {/* Handle: tap untuk buka tutup, geser untuk membuka. */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={detailOpen}
+            aria-label={detailOpen ? 'Tutup detail provinsi' : 'Buka detail provinsi'}
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+            onPointerCancel={onHandleUp}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setDetailOpen((value) => !value)
+              }
+            }}
+            className="flex h-9 w-full shrink-0 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+          >
+            <span className="h-1 w-11 rounded-full bg-ink/25" />
+          </div>
+
+          <div className="shrink-0 px-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                {/* Maks 2 baris: nama panjang di layar 320px jangan sampai mendorong
+                    switch Posko keluar dari area tertutup 196px. */}
+                <h1 className="line-clamp-2 font-heading text-[20px] font-semibold leading-[24px] tracking-[-0.5px] text-ink sm:text-[22px] sm:leading-[26px]">
+                  {info.line1} {info.line2}
+                </h1>
+                <div className="mt-1.5 inline-block rounded-[4px] border-[0.5px] border-green-500/50 bg-[#ebebeb] px-2 py-[3px] font-nav text-[11px] font-medium text-ink">
+                  {info.date}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end">
+                <div className="font-heading text-[44px] font-medium leading-none tracking-[-1.5px] text-ink">{info.aqi}</div>
+                <div className="mt-0.5 font-nav text-[11px] font-medium text-gray-500">AQI</div>
+                <div className="mt-1.5 rounded-[4px] px-2.5 py-[2px] font-nav text-[12px] font-bold" style={{ backgroundColor: info.categoryColor }}>
+                  <span className={isDarkText(info.category) ? 'text-[#1b1b1b]' : 'bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent'}>
+                    {info.category}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={poskoActive}
+              onClick={togglePosko}
+              className="mt-3 flex w-full cursor-pointer items-center justify-between border-t border-black/10 py-2.5 font-nav text-[14px] font-medium text-ink"
+            >
+              <span>Posko Medis</span>
+              <span className={`relative h-4 w-9 rounded-[5px] ${poskoActive ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-[#c2c2c2]'}`}>
+                <span className={`absolute top-0.5 size-3 rounded bg-white ${poskoActive ? 'right-0.5' : 'left-0.5'}`} />
+              </span>
+            </button>
+          </div>
+
+          {/* Selalu dirender supaya isi tidak berkedip kosong saat sheet turun.
+              Saat tertutup isinya dipudarkan, kalau tidak judul panel ikut mengintip
+              di 196px bawah yang masih terlihat. */}
+          <div
+            className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] transition-opacity duration-150 motion-reduce:transition-none ${
+              detailOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-hidden={!detailOpen}
+            inert={!detailOpen}
+          >
+            <div className="flex flex-col gap-3">
+              <HistoryPanelMobile values={values} activeIndex={weekIndex} onChange={onWeekChange} />
+              <ImpactPanelMobile impact={impact} />
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -411,57 +547,6 @@ function ImpactPanel({ impact }: { readonly impact: ImpactData }) {
           return <img key={index} src={icons[index % icons.length]} alt="" className="size-[28px]" />
         })}
       </div>
-    </section>
-  )
-}
-
-function InfoCardMobile({ line1, line2, date, aqi, category, categoryColor, poskoActive, onTogglePosko }: InfoCardData) {
-  return (
-    <section className="relative h-[380px] w-full shrink-0 rounded-[6px] bg-gradient-to-b from-[#f1f1f1] to-[#ffefee] text-ink shadow-card">
-      <h1 className="absolute inset-x-0 top-[20px] text-center font-heading text-[26px] font-semibold leading-[32px] tracking-[-0.72px]">
-        {line1}
-        <br />
-        {line2}
-      </h1>
-      <div className="absolute left-1/2 top-[100px] h-[26px] w-[200px] -translate-x-1/2 rounded-[6px] border-[0.5px] border-green-500/50 bg-gradient-to-b from-[#f1f1f1] to-[#ebebeb] pt-[2px] text-center font-nav text-[13px] font-medium">
-        {date}
-      </div>
-
-      <div className="absolute left-1/2 top-[138px] h-[96px] w-[154px] -translate-x-1/2">
-        <img src={gaugeArc} alt="" className="absolute inset-x-0 top-0 w-full" />
-        <div
-          className="absolute size-[14px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6]"
-          style={{
-            borderColor: categoryColor,
-            left: 77 + 73 * Math.cos(Math.PI * (1 - Math.min(Math.max(aqi / AQI_MAX, 0), 0.96))),
-            top: 77 - 73 * Math.sin(Math.PI * (1 - Math.min(Math.max(aqi / AQI_MAX, 0), 0.96))),
-          }}
-        />
-      </div>
-
-      <div className="absolute left-1/2 top-[176px] -translate-x-1/2 text-center font-heading text-[38px] font-medium leading-none tracking-[-1.28px]">{aqi}</div>
-      <div className="absolute inset-x-0 top-[222px] text-center font-nav text-[13px] font-medium">AQI</div>
-      <div
-        className="absolute left-1/2 top-[250px] flex h-[28px] w-[180px] -translate-x-1/2 items-center justify-center rounded-[6px] font-nav text-[13px] font-bold"
-        style={{ backgroundColor: categoryColor }}
-      >
-        <span className={isDarkText(category) ? 'text-[#1b1b1b]' : 'bg-gradient-to-b from-[#f1f1f1] to-[#dfffe6] bg-clip-text text-transparent'}>
-          {category}
-        </span>
-      </div>
-
-      <button
-        type="button"
-        role="switch"
-        aria-checked={poskoActive}
-        onClick={onTogglePosko}
-        className="absolute inset-x-0 top-[306px] flex cursor-pointer items-center justify-between px-4 font-nav text-[14px] font-medium"
-      >
-        <span>Posko Medis</span>
-        <span className={`relative h-4 w-9 rounded-[5px] ${poskoActive ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-[#c2c2c2]'}`}>
-          <span className={`absolute top-0.5 size-3 rounded bg-white ${poskoActive ? 'right-0.5' : 'left-0.5'}`} />
-        </span>
-      </button>
     </section>
   )
 }

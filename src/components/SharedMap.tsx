@@ -69,7 +69,8 @@ function getFitPadding(isMobile: boolean, kind: 'landing' | 'national' | 'provin
       : { top: 90, bottom: 110, left: 60, right: 60 }
   }
   if (isMobile) {
-    return { top: 140, bottom: 270, left: 16, right: 16 }
+    // Sheet provinsi ringkas 196px, navbar 64px; sisanya untuk poligon.
+    return { top: 96, bottom: 220, left: 16, right: 16 }
   }
   // Desktop: ulangi tata letak ProvincePage. Kolom isi maks 1120px, kartu AQI 393x453
   // di kanan atas, dua panel 605x220 di dasar (jarak 2.2% kolom). Batas provinsi
