@@ -11,7 +11,7 @@ Nama tim: Bebas aja nama tim mah
 | Nama | NIM | Peran |
 | --- | --- | --- |
 | Muhammad Hanif Susanto | 2702320450 | UI/UX Designer |
-| Fazril Syaveral Hillaby | 2902659922 | Fullstack Developer |
+| Fazril Syaveral Hillaby | 2902659922 | Front-end Developer |
 | Tony Cung | 2902645255 | Pitch Lead |
 
 ## Tech Stack
