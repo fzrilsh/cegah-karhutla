@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useLocation, useNavigate } from 'react-router'
+import { normalizePath } from './path.ts'
 
 export type MapCameraState =
   | { readonly kind: 'landing' }
@@ -23,7 +24,9 @@ interface MapTransitionApi {
 const MapTransitionContext = createContext<MapTransitionApi | null>(null)
 
 // Kamera derive dari route supaya transisi dan URL selalu sinkron (deep-link tetap jalan)
-function cameraFromPath(pathname: string): MapCameraState {
+function cameraFromPath(rawPath: string): MapCameraState {
+  // Route prerender disajikan sebagai '/peta/', samakan dulu.
+  const pathname = normalizePath(rawPath)
   if (pathname === '/peta') return { kind: 'national' }
   if (pathname.startsWith('/provinsi/')) {
     const slug = pathname.split('/')[2]

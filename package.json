@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node --experimental-strip-types scripts/gen-seo.ts",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test scripts/*.test.ts",
     "firms:fetch": "node --experimental-strip-types scripts/fetch-firms.ts",
     "history:fetch": "node --experimental-strip-types scripts/fetch-history.ts",
-    "posko:fetch": "node --experimental-strip-types scripts/fetch-posko.ts"
+    "posko:fetch": "node --experimental-strip-types scripts/fetch-posko.ts",
+    "seo:gen": "node --experimental-strip-types scripts/gen-seo.ts"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",

@@ -6,7 +6,9 @@ import { LandingPage } from '@/pages/LandingPage'
 import { NationalMapPage } from '@/pages/NationalMapPage'
 import { ProvincePage } from '@/pages/ProvincePage'
 import { SharedMap } from '@/components/SharedMap'
+import { Seo } from '@/components/Seo'
 import { MapTransitionProvider } from '@/lib/map-transition'
+import { normalizePath } from '@/lib/path'
 import { useMobile } from '@/hooks/use-mobile'
 import { DEFAULT_WEEK_INDEX } from '@/data/weekly-metrics'
 
@@ -64,11 +66,11 @@ function ProvinceOverlay({ weekIndex, onWeekChange }: ProvinceOverlayProps) {
 function Root() {
   const isMobile = useMobile()
   const location = useLocation()
-  const isLanding = location.pathname === '/'
-  const isNational = location.pathname === '/peta'
-  const slug = location.pathname.startsWith('/provinsi/')
-    ? location.pathname.split('/')[2]
-    : undefined
+  // Route hasil prerender memakai trailing slash ('/peta/'), jadi dibandingkan tanpa slash.
+  const path = normalizePath(location.pathname)
+  const isLanding = path === '/'
+  const isNational = path === '/peta'
+  const slug = path.startsWith('/provinsi/') ? path.split('/')[2] : undefined
 
   // Minggu terpilih disimpan di sini supaya slider di halaman provinsi dan peta memakai nilai yang sama.
   // Pindah halaman (termasuk ke landing) mengembalikannya ke minggu default.
@@ -111,6 +113,7 @@ function Root() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-stage select-none">
+      <Seo />
       {/* SharedMap selalu di-mount sekali, persist camera state antar route */}
       <SharedMap
         isMobile={isMobile}
